@@ -8,7 +8,8 @@
 dependencies:
   company_analytics:
     git:
-      url: http://git.qisoft.cn/dengyulin/company_analytics.git
+      url: https://github.com/drainlin/company_analytics.git
+      ref: v0.0.2
 ```
 
 ### 方式 B：本地 path 依赖
@@ -24,6 +25,11 @@ dependencies:
 ```bash
 flutter pub get
 ```
+
+建议：
+
+- 团队协作优先使用 `ref`（tag 或 commit）锁版本，确保所有人行为一致。
+- 插件升级时，先更新 `ref`，再执行 `flutter pub get`。
 
 ## 2. 配置 YAML
 
@@ -160,4 +166,11 @@ dart run company_analytics:company_analytics apply .
 
 # 仅检查 Facebook 原生配置
 dart run company_analytics:company_analytics check .
+```
+
+如果升级插件后 CLI 表现异常（像旧版本），先清缓存再重试：
+
+```bash
+rm -rf .dart_tool/pub/bin/company_analytics
+flutter pub upgrade company_analytics
 ```
