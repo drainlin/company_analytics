@@ -1,3 +1,4 @@
+import 'dart:isolate';
 import 'dart:io';
 
 void main(List<String> args) async {
@@ -8,7 +9,7 @@ void main(List<String> args) async {
 
   final String command = args.first;
   final List<String> rest = args.sublist(1);
-  final String packageRoot = File.fromUri(Platform.script).parent.parent.path;
+  final String packageRoot = await _resolvePackageRoot();
 
   final String scriptPath;
   final List<String> scriptArgs;
@@ -99,4 +100,18 @@ void _printHelp() {
   );
   stdout.writeln('  dart run company_analytics:company_analytics apply .');
   stdout.writeln('  dart run company_analytics:company_analytics check .');
+}
+
+Future<String> _resolvePackageRoot() async {
+  final Uri? libUri = await Isolate.resolvePackageUri(
+    Uri.parse('package:company_analytics/company_analytics.dart'),
+  );
+  if (libUri == null) {
+    stderr.writeln(
+      'Unable to resolve package root for company_analytics package.',
+    );
+    exit(1);
+  }
+
+  return File.fromUri(libUri).parent.parent.path;
 }
