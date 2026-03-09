@@ -54,23 +54,29 @@ void main(List<String> args) async {
 
 List<String> _normalizeAppRoot(List<String> args) {
   if (_hasFlag(args, '--app-root')) {
+    final int index = args.indexOf('--app-root');
+    if (index >= 0 && index + 1 < args.length) {
+      final List<String> normalized = List<String>.from(args);
+      normalized[index + 1] = _toAbsolutePath(args[index + 1]);
+      return normalized;
+    }
     return args;
   }
-  return <String>['--app-root', '.', ...args];
+  return <String>['--app-root', _toAbsolutePath('.'), ...args];
 }
 
 List<String> _normalizePositionalAppRoot(List<String> args) {
   if (args.isEmpty) {
-    return <String>['.'];
+    return <String>[_toAbsolutePath('.')];
   }
 
   if (_hasFlag(args, '--app-root')) {
     final int index = args.indexOf('--app-root');
     if (index >= 0 && index + 1 < args.length) {
-      return <String>[args[index + 1]];
+      return <String>[_toAbsolutePath(args[index + 1])];
     }
   }
-  return args;
+  return <String>[_toAbsolutePath(args.first)];
 }
 
 bool _hasFlag(List<String> args, String flag) {
@@ -114,4 +120,11 @@ Future<String> _resolvePackageRoot() async {
   }
 
   return File.fromUri(libUri).parent.parent.path;
+}
+
+String _toAbsolutePath(String inputPath) {
+  if (inputPath.startsWith('/')) {
+    return inputPath;
+  }
+  return Directory.current.uri.resolve(inputPath).toFilePath();
 }
