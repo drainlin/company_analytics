@@ -18,4 +18,7 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   yaml: ^3.1.3
 
+executables:
+  company_analytics: company_analytics
+
 flutter:

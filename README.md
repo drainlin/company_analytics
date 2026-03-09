@@ -56,7 +56,7 @@ singular:
 在宿主工程根目录执行：
 
 ```bash
-bash ../company_analytics/tool/setup_analytics.sh --app-root .
+dart run company_analytics:company_analytics setup --app-root .
 ```
 
 该命令会自动完成：
@@ -133,7 +133,31 @@ await analytics.clearUser();
 ## 6. 自检
 
 ```bash
-bash ../company_analytics/tool/check_facebook_setup.sh .
+dart run company_analytics:company_analytics check .
 ```
 
 通过标准：`Result: PASSED (0 failures, 0 warnings)`。
+
+## 7. CLI（避免找脚本目录）
+
+插件提供 CLI，可直接在宿主工程中执行：
+
+```bash
+dart run company_analytics:company_analytics <command> [options]
+```
+
+常用命令：
+
+```bash
+# 一键模板化 + 配置生成 + 检查
+dart run company_analytics:company_analytics setup --app-root .
+
+# 仅同步 YAML 到原生/Dart 配置
+dart run company_analytics:company_analytics sync --app-root .
+
+# 仅套用原生模板
+dart run company_analytics:company_analytics apply .
+
+# 仅检查 Facebook 原生配置
+dart run company_analytics:company_analytics check .
+```
