@@ -11,12 +11,12 @@ dependencies:
     sdk: flutter
   facebook_app_events: ^0.24.0
   singular_flutter_sdk: ^1.8.0
+  yaml: ^3.1.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-  yaml: ^3.1.3
 
 executables:
   company_analytics: company_analytics
