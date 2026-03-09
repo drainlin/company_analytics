@@ -65,6 +65,17 @@ plist_set_or_add_string() {
   fi
 }
 
+plist_set_or_add_bool() {
+  local plist="$1"
+  local key="$2"
+  local value="$3"
+
+  if /usr/libexec/PlistBuddy -c "Print :$key" "$plist" >/dev/null 2>&1; then
+    /usr/libexec/PlistBuddy -c "Delete :$key" "$plist"
+  fi
+  /usr/libexec/PlistBuddy -c "Add :$key bool $value" "$plist"
+}
+
 cleanup_ios_facebook_url_types() {
   local plist="$1"
 
@@ -102,6 +113,8 @@ ensure_ios_plist() {
   plist_set_or_add_string "$plist" "FacebookAppID" '$(FACEBOOK_APP_ID)'
   plist_set_or_add_string "$plist" "FacebookClientToken" '$(FACEBOOK_CLIENT_TOKEN)'
   plist_set_or_add_string "$plist" "FacebookDisplayName" '$(FACEBOOK_DISPLAY_NAME)'
+  plist_set_or_add_bool "$plist" "FacebookAdvertiserIDCollectionEnabled" "true"
+  plist_set_or_add_bool "$plist" "FacebookAutoLogAppEventsEnabled" "true"
 
   cleanup_ios_facebook_url_types "$plist"
 
@@ -120,7 +133,7 @@ ensure_ios_plist() {
   /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:$idx:CFBundleURLSchemes array" "$plist"
   /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:$idx:CFBundleURLSchemes:0 string fb\$(FACEBOOK_APP_ID)" "$plist"
 
-  echo "Patched iOS Info.plist (clean + overwrite Facebook keys and URL scheme template)."
+  echo "Patched iOS Info.plist (clean + overwrite Facebook keys, flags, and URL scheme template)."
 }
 
 ensure_android_manifest "$ANDROID_MANIFEST"

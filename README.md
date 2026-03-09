@@ -205,6 +205,9 @@ bash ../company_analytics/tool/setup_analytics.sh --app-root .
 - 原生模板化是“清理并覆盖”模式：
   - 会清理旧的 Facebook `meta-data` / URL Scheme
   - 再写入统一模板，避免历史配置残留
+  - iOS 会自动设置：
+    - `FacebookAdvertiserIDCollectionEnabled = true`
+    - `FacebookAutoLogAppEventsEnabled = true`
 
 如果第一次运行，会提示你先填写 YAML key，再执行同一条命令即可。
 
