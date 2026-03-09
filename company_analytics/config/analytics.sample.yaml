@@ -1,8 +1,17 @@
 facebook:
-  app_id: "123456789012345"
-  client_token: "YOUR_FACEBOOK_CLIENT_TOKEN"
-  display_name: "Event Manager"
+  ios:
+    app_id: "123456789012345"
+    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
+    display_name: "Event Manager iOS"
+  android:
+    app_id: "123456789012345"
+    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
+    display_name: "Event Manager Android"
 
 singular:
-  api_key: "YOUR_SINGULAR_API_KEY"
-  secret: "YOUR_SINGULAR_SECRET"
+  ios:
+    api_key: "YOUR_SINGULAR_API_KEY_IOS"
+    secret: "YOUR_SINGULAR_SECRET_IOS"
+  android:
+    api_key: "YOUR_SINGULAR_API_KEY_ANDROID"
+    secret: "YOUR_SINGULAR_SECRET_ANDROID"

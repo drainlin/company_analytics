@@ -9,7 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  facebook_app_events: ^0.21.0
+  facebook_app_events: ^0.24.0
   singular_flutter_sdk: ^1.8.0
 
 dev_dependencies:

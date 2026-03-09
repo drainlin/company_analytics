@@ -228,14 +228,28 @@ bash ../company_analytics/tool/sync_analytics_config.sh \
 
 ```yaml
 facebook:
-  app_id: "123456789012345"
-  client_token: "YOUR_FACEBOOK_CLIENT_TOKEN"
-  display_name: "Event Manager"
+  ios:
+    app_id: "123456789012345"
+    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
+    display_name: "Event Manager iOS"
+  android:
+    app_id: "123456789012345"
+    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
+    display_name: "Event Manager Android"
 
 singular:
-  api_key: "YOUR_SINGULAR_API_KEY"
-  secret: "YOUR_SINGULAR_SECRET"
+  ios:
+    api_key: "YOUR_SINGULAR_API_KEY_IOS"
+    secret: "YOUR_SINGULAR_SECRET_IOS"
+  android:
+    api_key: "YOUR_SINGULAR_API_KEY_ANDROID"
+    secret: "YOUR_SINGULAR_SECRET_ANDROID"
 ```
+
+兼容说明：
+
+- 仍兼容旧格式（`facebook.app_id` / `singular.api_key`）
+- 若同时存在平台化和旧格式，优先使用平台化字段
 
 ### 2) 套用原生模板（一次性）
 
@@ -263,7 +277,7 @@ bash ../company_analytics/tool/sync_analytics_config.sh \
 - Android: `android/app/src/main/res/values/facebook_config.xml`
 - iOS: `ios/Flutter/FacebookConfig.xcconfig`
 - iOS: 自动确保 `Debug/Release/Profile.xcconfig` 包含 `FacebookConfig.xcconfig`
-- Dart: `lib/generated/analytics_env.g.dart`（含 `singularApiKey` / `singularSecret` 常量）
+- Dart: `lib/generated/analytics_env.g.dart`（含平台化常量与向后兼容别名）
 
 ### 3) 在 init 中使用 YAML 生成的 Singular Key
 ### 4) 在 init 中使用 YAML 生成的 Singular Key
@@ -275,8 +289,8 @@ import 'package:your_app/generated/analytics_env.g.dart';
 Future<void> initAnalytics(CompanyAnalytics analytics) async {
   await analytics.init(
     const AnalyticsConfig(
-      singularApiKey: AnalyticsEnv.singularApiKey,
-      singularSecret: AnalyticsEnv.singularSecret,
+      singularApiKey: AnalyticsEnv.singularIosApiKey,
+      singularSecret: AnalyticsEnv.singularIosSecret,
       enableFacebook: true,
       enableSingular: true,
       facebookAutoLogAppEventsEnabled: true,
@@ -310,7 +324,7 @@ bash ../company_analytics/tool/check_facebook_setup.sh .
 
 排查顺序：
 
-1. 检查 `singularApiKey` / `singularSecret` 是否为空
+1. 检查 `singularIosApiKey` / `singularIosSecret`（或你实际使用的平台字段）是否为空
 2. 检查 iOS/Android 平台配置是否完整
 3. 检查是否把两个 provider 都关闭了（`enableFacebook=false` 且 `enableSingular=false`）
 

@@ -27,19 +27,24 @@ ensure_android_manifest() {
 
   # Clean existing Facebook meta-data entries, then inject canonical template entries.
   awk '
-    BEGIN { inserted = 0 }
+    BEGIN { inserted = 0; in_application_tag = 0 }
     {
       if ($0 ~ /com\.facebook\.sdk\.ApplicationId/ ||
           $0 ~ /com\.facebook\.sdk\.ClientToken/) {
         next
       }
 
+      if (inserted == 0 && in_application_tag == 0 && $0 ~ /<application([[:space:]>]|$)/) {
+        in_application_tag = 1
+      }
+
       print $0
 
-      if (inserted == 0 && $0 ~ /<application[[:space:]>]/) {
+      if (inserted == 0 && in_application_tag == 1 && $0 ~ />/) {
         print "        <meta-data android:name=\"com.facebook.sdk.ApplicationId\" android:value=\"@string/facebook_app_id\"/>"
         print "        <meta-data android:name=\"com.facebook.sdk.ClientToken\" android:value=\"@string/facebook_client_token\"/>"
         inserted = 1
+        in_application_tag = 0
       }
     }
   ' "$manifest" > "$tmp"
@@ -68,7 +73,10 @@ cleanup_ios_facebook_url_types() {
   fi
 
   local count
-  count=$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$plist" | grep -E '^    Dict \{' | wc -l | tr -d ' ')
+  count=$(
+    /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$plist" \
+      | awk '/^    Dict \{/ { c++ } END { print c + 0 }'
+  )
 
   local i
   for ((i = count - 1; i >= 0; i--)); do
@@ -102,7 +110,10 @@ ensure_ios_plist() {
   fi
 
   local count
-  count=$(/usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$plist" | grep -E '^    Dict \{' | wc -l | tr -d ' ')
+  count=$(
+    /usr/libexec/PlistBuddy -c "Print :CFBundleURLTypes" "$plist" \
+      | awk '/^    Dict \{/ { c++ } END { print c + 0 }'
+  )
   local idx="$count"
 
   /usr/libexec/PlistBuddy -c "Add :CFBundleURLTypes:$idx dict" "$plist"
