@@ -75,5 +75,6 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 2
 fi
 
-cd "$PACKAGE_ROOT"
-dart run tool/sync_analytics_config.dart --app-root "$APP_ROOT" --config "$CONFIG_PATH"
+dart "$PACKAGE_ROOT/tool/sync_analytics_config.dart" \
+  --app-root "$APP_ROOT" \
+  --config "$CONFIG_PATH"
