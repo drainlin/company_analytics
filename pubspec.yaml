@@ -1,6 +1,6 @@
 name: company_analytics
 description: "Internal Flutter analytics facade for Facebook App Events and Singular."
-version: 0.0.3
+version: 0.0.4
 
 environment:
   sdk: ">=3.8.1 <4.0.0"

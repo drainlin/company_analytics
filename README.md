@@ -9,7 +9,7 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.0.2
+      ref: v0.0.4
 ```
 
 ### 方式 B：本地 path 依赖
