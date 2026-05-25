@@ -8,8 +8,8 @@
 dependencies:
   company_analytics:
     git:
-      url: https://github.com/drainlin/company_analytics.git
-      ref: v0.0.4
+      url: http://git.qisoft.cn/dengyulin/company_analytics.git
+      ref: v0.0.5
 ```
 
 ### 方式 B：本地 path 依赖
