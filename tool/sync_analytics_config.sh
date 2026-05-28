@@ -75,6 +75,13 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
   exit 2
 fi
 
-dart "$PACKAGE_ROOT/tool/sync_analytics_config.dart" \
+PACKAGE_CONFIG="$APP_ROOT/.dart_tool/package_config.json"
+if [[ ! -f "$PACKAGE_CONFIG" ]]; then
+  echo "Package config not found: $PACKAGE_CONFIG" >&2
+  echo "Run flutter pub get in the app root first." >&2
+  exit 2
+fi
+
+dart --packages="$PACKAGE_CONFIG" "$PACKAGE_ROOT/tool/sync_analytics_config.dart" \
   --app-root "$APP_ROOT" \
   --config "$CONFIG_PATH"
