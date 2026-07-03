@@ -41,7 +41,26 @@ flutter pub get
 
 ## 远程配置
 
-开发期可以先编辑仓库内的本地 JSON：
+生产/联调推荐使用已部署的远程配置服务维护 JSON：
+
+- 示例配置 URL：`https://config.example.com/event_manager/analytics.remote.json`
+
+后台支持：
+
+- 新增 / 改名 app
+- 新增 / 改名 / 删除 JSON 文件
+- 使用表单编辑 `analytics.remote.json`
+- 通过高级 JSON 预览查看最终配置
+
+公开 JSON URL 使用固定格式：
+
+```text
+https://config.example.com/<app>/<file>.json
+```
+
+不存在的 app 或 JSON 文件会返回 `404`。
+
+本地开发也可以编辑仓库内的本地 JSON：
 
 - [analytics.remote.dev.json](/Users/yulin/Projects/event_manager/config/analytics.remote.dev.json)
 
@@ -92,6 +111,8 @@ JSON 使用同一个文件，并在文件内区分 iOS 和 Android：
 
 每次启动会先请求远程 URL；成功解析后写入本地缓存。网络失败时会使用上一次成功解析的缓存。缓存 metadata 包含 `version`、`sha256`、`source_url`、`cached_at`。
 
+远程请求默认最多尝试 3 次，每次请求默认超时 3 秒，重试间隔从 500ms 开始退避。如果所有远程请求都失败，再按 `useCachedConfigOnFailure` 决定是否使用缓存。
+
 ## 初始化
 
 建议在 `main()` 启动早期初始化：
@@ -105,19 +126,27 @@ Future<void> initAnalytics() async {
   await analytics.initFromRemoteConfig(
     RemoteAnalyticsConfig(
       url: Uri.parse(
-        'http://127.0.0.1:8765/analytics.remote.dev.json',
+        'https://config.example.com/event_manager/analytics.remote.json',
       ),
+      timeout: const Duration(seconds: 3),
+      maxAttempts: 3,
+      retryDelay: const Duration(milliseconds: 500),
+      useCachedConfigOnFailure: true,
     ),
   );
 }
 ```
+
+如果启动时因为网络或无缓存导致 `initFromRemoteConfig()` 初始化失败，`CompanyAnalytics` 会记住这次远程配置参数。后续第一次 `track()` 发现还没初始化时，会先立即重试远程初始化；重试成功后再上报当前事件，重试失败则继续按原策略排队或 fail-fast。
 
 调试配置来源、缓存和变更：
 
 ```dart
 final loader = RemoteAnalyticsConfigLoader();
 final remoteConfig = RemoteAnalyticsConfig(
-  url: Uri.parse('http://127.0.0.1:8765/analytics.remote.dev.json'),
+  url: Uri.parse(
+    'https://config.example.com/event_manager/analytics.remote.json',
+  ),
 );
 
 final result = await loader.loadResult(remoteConfig);

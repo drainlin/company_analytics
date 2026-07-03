@@ -25,6 +25,9 @@ class CompanyAnalytics {
 
   AnalyticsConfig? _config;
   RemoteAnalyticsConfigResult? _lastRemoteConfigResult;
+  RemoteAnalyticsConfig? _lastRemoteConfig;
+  RemoteAnalyticsConfigLoader? _lastRemoteConfigLoader;
+  Future<void>? _remoteInitAttempt;
   List<AnalyticsProvider> _providers = const <AnalyticsProvider>[];
 
   bool get isInitialized => _isInitialized;
@@ -76,6 +79,23 @@ class CompanyAnalytics {
     RemoteAnalyticsConfigLoader? loader,
   }) async {
     final configLoader = loader ?? RemoteAnalyticsConfigLoader();
+    _lastRemoteConfig = remoteConfig;
+    _lastRemoteConfigLoader = configLoader;
+    final attempt = _loadAndInitFromRemoteConfig(remoteConfig, configLoader);
+    _remoteInitAttempt = attempt;
+    try {
+      await attempt;
+    } finally {
+      if (identical(_remoteInitAttempt, attempt)) {
+        _remoteInitAttempt = null;
+      }
+    }
+  }
+
+  Future<void> _loadAndInitFromRemoteConfig(
+    RemoteAnalyticsConfig remoteConfig,
+    RemoteAnalyticsConfigLoader configLoader,
+  ) async {
     final result = await configLoader.loadResult(remoteConfig);
     _lastRemoteConfigResult = result;
     await init(result.config);
@@ -83,6 +103,12 @@ class CompanyAnalytics {
 
   Future<void> track(AnalyticsEvent event) async {
     if (!_isInitialized) {
+      await _retryRemoteInitIfPossible();
+      if (_isInitialized) {
+        await _trackToProviders(event);
+        return;
+      }
+
       final shouldFailFast =
           _config?.failFastOnTrackBeforeInit ?? failFastBeforeInit;
       if (shouldFailFast) {
@@ -101,6 +127,31 @@ class CompanyAnalytics {
     }
 
     await _trackToProviders(event);
+  }
+
+  Future<void> _retryRemoteInitIfPossible() async {
+    if (_isInitialized || _lastRemoteConfig == null) {
+      return;
+    }
+
+    final runningAttempt = _remoteInitAttempt;
+    if (runningAttempt != null) {
+      try {
+        await runningAttempt;
+      } catch (_) {
+        // The caller falls back to the normal not-initialized behavior.
+      }
+      return;
+    }
+
+    try {
+      await initFromRemoteConfig(
+        _lastRemoteConfig!,
+        loader: _lastRemoteConfigLoader,
+      );
+    } catch (_) {
+      // The caller falls back to queueing or fail-fast behavior.
+    }
   }
 
   Future<void> setUserId(String userId) async {

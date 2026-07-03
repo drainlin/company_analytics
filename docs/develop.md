@@ -13,6 +13,26 @@
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
 
+## 远程配置服务
+
+线上联调使用 远程配置服务：
+
+- 示例配置 URL：`https://config.example.com/event_manager/analytics.remote.json`
+
+公开 JSON URL 格式：
+
+```text
+https://config.example.com/<app>/<file>.json
+```
+
+规则：
+
+- 左侧选择 app。
+- 右侧选择 JSON 文件。
+- `analytics.remote.json` 使用表单编辑。
+- 不存在的 app 或 JSON 文件返回 `404`。
+- 改名 app 或 JSON 文件后，旧路径返回 `404`，新路径返回 `200`。
+
 ## 本地远程配置服务
 
 开发期编辑：
@@ -99,7 +119,7 @@ Future<void> initAnalytics() async {
   await analytics.initFromRemoteConfig(
     RemoteAnalyticsConfig(
       url: Uri.parse(
-        'http://127.0.0.1:8765/analytics.remote.dev.json',
+        'https://config.example.com/event_manager/analytics.remote.json',
       ),
       timeout: const Duration(seconds: 3),
       useCachedConfigOnFailure: true,
@@ -118,6 +138,25 @@ Future<void> initAnalytics() async {
 6. Singular provider 使用 runtime key/secret 初始化。
 7. 初始化前缓存的事件开始补发。
 
+远程请求默认最多尝试 3 次：
+
+```dart
+RemoteAnalyticsConfig(
+  url: Uri.parse(
+    'https://config.example.com/event_manager/analytics.remote.json',
+  ),
+  timeout: const Duration(seconds: 3),
+  maxAttempts: 3,
+  retryDelay: const Duration(milliseconds: 500),
+  retryBackoffMultiplier: 2,
+  useCachedConfigOnFailure: true,
+)
+```
+
+如果所有远程请求都失败，会再尝试读取上一次成功缓存。没有缓存时才抛出 `AnalyticsInitializationException`。
+
+如果启动阶段初始化失败，`CompanyAnalytics` 会保留最近一次 `RemoteAnalyticsConfig` 和 loader。后续 `track()` 发现还没有成功初始化时，会先立即重试远程初始化；重试成功后上报当前事件，重试失败则按原策略把事件排队，或在 fail-fast 模式下抛 `AnalyticsNotInitializedException`。
+
 ## 缓存与变更检测
 
 远程请求成功后会缓存原始 JSON 和 metadata。远程失败时，如果 `useCachedConfigOnFailure` 为 `true`，会回退到上一次成功缓存。
@@ -125,7 +164,9 @@ Future<void> initAnalytics() async {
 ```dart
 final loader = RemoteAnalyticsConfigLoader();
 final remoteConfig = RemoteAnalyticsConfig(
-  url: Uri.parse('http://127.0.0.1:8765/analytics.remote.dev.json'),
+  url: Uri.parse(
+    'https://config.example.com/event_manager/analytics.remote.json',
+  ),
 );
 
 final result = await loader.loadResult(remoteConfig);

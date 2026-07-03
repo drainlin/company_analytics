@@ -15,7 +15,11 @@ class RemoteAnalyticsConfig {
     this.timeout = const Duration(seconds: 3),
     this.cacheKey = _defaultCacheKey,
     this.useCachedConfigOnFailure = true,
-  });
+    this.maxAttempts = 3,
+    this.retryDelay = const Duration(milliseconds: 500),
+    this.retryBackoffMultiplier = 2,
+  }) : assert(maxAttempts > 0),
+       assert(retryBackoffMultiplier >= 1);
 
   static const String _defaultCacheKey = 'company_analytics.remote_config_json';
 
@@ -23,6 +27,9 @@ class RemoteAnalyticsConfig {
   final Duration timeout;
   final String cacheKey;
   final bool useCachedConfigOnFailure;
+  final int maxAttempts;
+  final Duration retryDelay;
+  final double retryBackoffMultiplier;
 }
 
 abstract class AnalyticsConfigHttpClient {
@@ -176,57 +183,88 @@ class RemoteAnalyticsConfigLoader {
   Future<RemoteAnalyticsConfigResult> loadResult(
     RemoteAnalyticsConfig remoteConfig,
   ) async {
-    try {
-      final jsonString = await _httpClient.get(
-        remoteConfig.url,
-        remoteConfig.timeout,
-      );
-      final config = parse(jsonString);
-      final metadata = _buildMetadata(jsonString, remoteConfig.url);
-      final previousMetadata = await _readMetadata(remoteConfig.cacheKey);
-      await _cache.write(remoteConfig.cacheKey, jsonString);
-      await _cache.write(
-        _metadataCacheKey(remoteConfig.cacheKey),
-        jsonEncode(metadata.toJson()),
-      );
-      return RemoteAnalyticsConfigResult(
-        config: config,
-        source: RemoteAnalyticsConfigSource.remote,
-        changedFromCache:
-            previousMetadata != null &&
-            previousMetadata.sha256 != metadata.sha256,
-        metadata: metadata,
-        previousMetadata: previousMetadata,
-      );
-    } catch (error) {
-      if (!remoteConfig.useCachedConfigOnFailure) {
-        throw AnalyticsInitializationException(
-          'Failed to load remote analytics config.',
-          error,
-        );
-      }
+    Object? remoteError;
 
-      final cachedJson = await _cache.read(remoteConfig.cacheKey);
-      if (cachedJson == null) {
-        throw AnalyticsInitializationException(
-          'Failed to load remote analytics config and no cached config exists.',
-          error,
-        );
-      }
-
+    for (var attempt = 1; attempt <= remoteConfig.maxAttempts; attempt += 1) {
       try {
-        return RemoteAnalyticsConfigResult(
-          config: parse(cachedJson),
-          source: RemoteAnalyticsConfigSource.cache,
-          metadata: await _readMetadata(remoteConfig.cacheKey),
-        );
-      } catch (cacheError) {
-        throw AnalyticsInitializationException(
-          'Failed to parse cached analytics config.',
-          cacheError,
-        );
+        return await _loadRemoteResult(remoteConfig);
+      } catch (error) {
+        remoteError = error;
+        if (attempt < remoteConfig.maxAttempts) {
+          await Future<void>.delayed(_retryDelay(remoteConfig, attempt));
+        }
       }
     }
+
+    if (!remoteConfig.useCachedConfigOnFailure) {
+      throw AnalyticsInitializationException(
+        'Failed to load remote analytics config.',
+        remoteError,
+      );
+    }
+
+    final cachedJson = await _cache.read(remoteConfig.cacheKey);
+    if (cachedJson == null) {
+      throw AnalyticsInitializationException(
+        'Failed to load remote analytics config and no cached config exists.',
+        remoteError,
+      );
+    }
+
+    try {
+      return RemoteAnalyticsConfigResult(
+        config: parse(cachedJson),
+        source: RemoteAnalyticsConfigSource.cache,
+        metadata: await _readMetadata(remoteConfig.cacheKey),
+      );
+    } catch (cacheError) {
+      throw AnalyticsInitializationException(
+        'Failed to parse cached analytics config.',
+        cacheError,
+      );
+    }
+  }
+
+  Future<RemoteAnalyticsConfigResult> _loadRemoteResult(
+    RemoteAnalyticsConfig remoteConfig,
+  ) async {
+    final jsonString = await _httpClient.get(
+      remoteConfig.url,
+      remoteConfig.timeout,
+    );
+    final config = parse(jsonString);
+    final metadata = _buildMetadata(jsonString, remoteConfig.url);
+    final previousMetadata = await _readMetadata(remoteConfig.cacheKey);
+    await _cache.write(remoteConfig.cacheKey, jsonString);
+    await _cache.write(
+      _metadataCacheKey(remoteConfig.cacheKey),
+      jsonEncode(metadata.toJson()),
+    );
+    return RemoteAnalyticsConfigResult(
+      config: config,
+      source: RemoteAnalyticsConfigSource.remote,
+      changedFromCache:
+          previousMetadata != null &&
+          previousMetadata.sha256 != metadata.sha256,
+      metadata: metadata,
+      previousMetadata: previousMetadata,
+    );
+  }
+
+  static Duration _retryDelay(RemoteAnalyticsConfig remoteConfig, int attempt) {
+    final multiplier = _pow(remoteConfig.retryBackoffMultiplier, attempt - 1);
+    return Duration(
+      microseconds: (remoteConfig.retryDelay.inMicroseconds * multiplier)
+          .round(),
+    );
+  }
+
+  static double _pow(double base, int exponent) {
+    var result = 1.0;
+    for (var i = 0; i < exponent; i += 1) {
+      result *= base;
+    }
+    return result;
   }
 
   Future<void> clearCache(RemoteAnalyticsConfig remoteConfig) async {

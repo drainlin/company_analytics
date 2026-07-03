@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:company_analytics/company_analytics.dart';
@@ -91,6 +92,85 @@ void main() {
         RemoteAnalyticsConfigSource.remote,
       );
     });
+
+    test(
+      'track retries failed remote init and sends event after success',
+      () async {
+        final provider = InMemoryAnalyticsProvider();
+        final httpClient = _SequenceConfigHttpClient(<Object>[
+          Exception('network down'),
+          _remoteJson,
+        ]);
+        final loader = RemoteAnalyticsConfigLoader(
+          httpClient: httpClient,
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        );
+        final analytics = CompanyAnalytics(
+          providers: <InMemoryAnalyticsProvider>[provider],
+        );
+        final remoteConfig = RemoteAnalyticsConfig(
+          url: Uri.parse('http://127.0.0.1/config.json'),
+          maxAttempts: 1,
+        );
+
+        await expectLater(
+          analytics.initFromRemoteConfig(remoteConfig, loader: loader),
+          throwsA(isA<AnalyticsInitializationException>()),
+        );
+
+        await analytics.track(const AnalyticsEvent(name: 'app_open'));
+
+        expect(analytics.isInitialized, isTrue);
+        expect(httpClient.callCount, 2);
+        expect(provider.trackedEvents.map((event) => event.name), <String>[
+          'app_open',
+        ]);
+      },
+    );
+
+    test(
+      'track waits for in-flight remote init without duplicate fetch',
+      () async {
+        final provider = InMemoryAnalyticsProvider();
+        final completer = Completer<String>();
+        final httpClient = _CompleterConfigHttpClient(completer.future);
+        final loader = RemoteAnalyticsConfigLoader(
+          httpClient: httpClient,
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        );
+        final analytics = CompanyAnalytics(
+          providers: <InMemoryAnalyticsProvider>[provider],
+        );
+        final remoteConfig = RemoteAnalyticsConfig(
+          url: Uri.parse('http://127.0.0.1/config.json'),
+        );
+
+        final initFuture = analytics.initFromRemoteConfig(
+          remoteConfig,
+          loader: loader,
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final trackFuture = analytics.track(
+          const AnalyticsEvent(name: 'app_open'),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(httpClient.callCount, 1);
+
+        completer.complete(_remoteJson);
+        await initFuture;
+        await trackFuture;
+
+        expect(analytics.isInitialized, isTrue);
+        expect(httpClient.callCount, 1);
+        expect(provider.trackedEvents.map((event) => event.name), <String>[
+          'app_open',
+        ]);
+      },
+    );
   });
 
   group('RemoteAnalyticsConfigLoader', () {
@@ -173,6 +253,30 @@ void main() {
       expect(result.source, RemoteAnalyticsConfigSource.cache);
       expect(config.facebookAppId, 'fb_app_android');
       expect(config.singularApiKey, 'singular_key_android');
+    });
+
+    test('retries remote fetch before using successful config', () async {
+      final httpClient = _SequenceConfigHttpClient(<Object>[
+        Exception('network down once'),
+        Exception('network down twice'),
+        _remoteJson,
+      ]);
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: httpClient,
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.android,
+      );
+      final remoteConfig = RemoteAnalyticsConfig(
+        url: Uri.parse('http://127.0.0.1/config.json'),
+        maxAttempts: 3,
+        retryDelay: Duration.zero,
+      );
+
+      final result = await loader.loadResult(remoteConfig);
+
+      expect(result.source, RemoteAnalyticsConfigSource.remote);
+      expect(result.config.facebookAppId, 'fb_app_android');
+      expect(httpClient.callCount, 3);
     });
 
     test('reports when a fetched remote config differs from cache', () async {
@@ -290,6 +394,37 @@ class _FailingConfigHttpClient implements AnalyticsConfigHttpClient {
   @override
   Future<String> get(Uri url, Duration timeout) async {
     throw Exception('network down');
+  }
+}
+
+class _SequenceConfigHttpClient implements AnalyticsConfigHttpClient {
+  _SequenceConfigHttpClient(this.responses);
+
+  final List<Object> responses;
+  int callCount = 0;
+
+  @override
+  Future<String> get(Uri url, Duration timeout) async {
+    final index = callCount;
+    callCount += 1;
+    final response = responses[index];
+    if (response is String) {
+      return response;
+    }
+    throw response;
+  }
+}
+
+class _CompleterConfigHttpClient implements AnalyticsConfigHttpClient {
+  _CompleterConfigHttpClient(this.response);
+
+  final Future<String> response;
+  int callCount = 0;
+
+  @override
+  Future<String> get(Uri url, Duration timeout) {
+    callCount += 1;
+    return response;
   }
 }
 
