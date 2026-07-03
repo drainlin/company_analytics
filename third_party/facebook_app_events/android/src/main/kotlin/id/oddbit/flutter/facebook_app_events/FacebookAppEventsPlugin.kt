@@ -29,8 +29,10 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   /// This local reference serves to register the plugin with the Flutter Engine and unregister it
   /// when the Flutter Engine is detached from the Activity
   private lateinit var channel : MethodChannel
-  private lateinit var appEventsLogger: AppEventsLogger
-  private lateinit var anonymousId: String
+  private var appEventsLogger: AppEventsLogger? = null
+  private var anonymousId: String? = null
+  private var configuredFromDart = false
+  private var graphApiVersion = "v24.0"
 
   private val logTag = "FacebookAppEvents"
 
@@ -43,15 +45,6 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     applicationContext = flutterPluginBinding.applicationContext
     application = flutterPluginBinding.applicationContext.applicationContext as? Application
-    appEventsLogger = AppEventsLogger.newLogger(flutterPluginBinding.applicationContext)
-    anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(flutterPluginBinding.applicationContext)
-
-    // Override the Graph API version because Facebook Android SDK v18.x still defaults to v16.0,
-    // which was removed by Meta on May 14, 2025. This is a known upstream issue:
-    // https://github.com/facebook/facebook-android-sdk/issues/1308
-    // Note: the SDK emits a Log.w in release builds when this is called, but the version is
-    // still applied. This is intentional and correct behavior for a plugin.
-    FacebookSdk.setGraphApiVersion("v24.0")
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
@@ -62,6 +55,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
   override fun onMethodCall(call: MethodCall, result: Result) {
     when (call.method) {
+      "configure" -> handleConfigure(call, result)
       "activateApp" -> handleActivateApp(call, result)
       "clearUserData" -> handleClearUserData(call, result)
       "setUserData" -> handleSetUserData(call, result)
@@ -92,6 +86,35 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     }
   }
 
+  private fun handleConfigure(call: MethodCall, result: Result) {
+    val context = applicationContext
+    if (context == null) {
+      result.error("missing_context", "could not configure Facebook SDK: Android context is missing", null)
+      return
+    }
+
+    val appId = call.argument<String>("appId")
+    val clientToken = call.argument<String>("clientToken")
+    if (appId.isNullOrBlank() || clientToken.isNullOrBlank()) {
+      result.error("INVALID_ARGUMENT", "Facebook appId and clientToken are required", null)
+      return
+    }
+
+    FacebookSdk.setApplicationId(appId)
+    FacebookSdk.setClientToken(clientToken)
+    // Override before SDK initialization. Facebook Android SDK v18.x still defaults
+    // to v16.0, which was removed by Meta on May 14, 2025.
+    FacebookSdk.setGraphApiVersion(graphApiVersion)
+    if (!FacebookSdk.isInitialized()) {
+      FacebookSdk.sdkInitialize(context)
+    }
+    appEventsLogger = AppEventsLogger.newLogger(context)
+    anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(context)
+    configuredFromDart = true
+
+    result.success(null)
+  }
+
   private fun handleActivateApp(call: MethodCall, result: Result) {
       val application = this.application
 
@@ -100,6 +123,8 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
           return
       }
 
+      if (!requireConfigured(result)) return
+
       val applicationId = call.argument("applicationId") as? String
 
       AppEventsLogger.activateApp(application, applicationId)
@@ -107,12 +132,32 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       result.success(null)
   }
 
+  private fun getAppEventsLogger(result: Result): AppEventsLogger? {
+    val logger = appEventsLogger
+    if (logger != null) {
+      return logger
+    }
+
+    result.error("not_configured", "Facebook SDK must be configured from Dart before use", null)
+    return null
+  }
+
+  private fun requireConfigured(result: Result): Boolean {
+    if (configuredFromDart) {
+      return true
+    }
+    result.error("not_configured", "Facebook SDK must be configured from Dart before use", null)
+    return false
+  }
+
   private fun handleClearUserData(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     AppEventsLogger.clearUserData()
     result.success(null)
   }
 
   private fun handleSetUserData(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val arguments = call.arguments as? Map<String, Any?> ?: emptyMap()
 
     // Merge semantics: the native SDK only stores non-null fields and leaves
@@ -136,19 +181,22 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleClearUserId(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     AppEventsLogger.clearUserID()
     result.success(null)
   }
 
   private fun handleFlush(call: MethodCall, result: Result) {
-    appEventsLogger.flush()
+    val logger = getAppEventsLogger(result) ?: return
+    logger.flush()
     result.success(null)
   }
 
   private fun handleGetApplicationId(call: MethodCall, result: Result) {
-    result.success(appEventsLogger.applicationId)
+    result.success(if (configuredFromDart) FacebookSdk.getApplicationId() else null)
   }
  private fun handleGetAnonymousId(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     result.success(anonymousId)
   }
   
@@ -158,11 +206,15 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       result.error("INVALID_ARGUMENT", "Graph API version string is required", null)
       return
     }
-    FacebookSdk.setGraphApiVersion(version)
+    graphApiVersion = version
+    if (configuredFromDart) {
+      FacebookSdk.setGraphApiVersion(version)
+    }
     result.success(null)
   }
 
   private fun handleSetAdvertiserTracking(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val enabled = call.argument<Boolean>("enabled") ?: false
     val collectId = call.argument<Boolean>("collectId") ?: true
 
@@ -172,12 +224,14 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetAdvertiserIdCollectionEnabled(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val enabled = call.arguments as? Boolean ?: false
     FacebookSdk.setAdvertiserIDCollectionEnabled(enabled)
     result.success(null)
   }
 
   private fun handleSetLimitEventAndDataUsage(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val context = applicationContext
     if (context == null) {
       result.error("missing_context", "could not set limitEventAndDataUsage: Android context is missing", null)
@@ -189,6 +243,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleLogEvent(call: MethodCall, result: Result) {
+    val logger = getAppEventsLogger(result) ?: return
     val eventName = call.argument<String>("name")
     if (eventName == null) {
       result.error("INVALID_ARGUMENT", "Event name is required and cannot be null.", null)
@@ -199,20 +254,21 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     if (valueToSum != null && parameters != null) {
       val parameterBundle = createBundleFromMap(parameters)
-      appEventsLogger.logEvent(eventName, valueToSum, parameterBundle)
+      logger.logEvent(eventName, valueToSum, parameterBundle)
     } else if (valueToSum != null) {
-      appEventsLogger.logEvent(eventName, valueToSum)
+      logger.logEvent(eventName, valueToSum)
     } else if (parameters != null) {
       val parameterBundle = createBundleFromMap(parameters)
-      appEventsLogger.logEvent(eventName, parameterBundle)
+      logger.logEvent(eventName, parameterBundle)
     } else {
-      appEventsLogger.logEvent(eventName)
+      logger.logEvent(eventName)
     }
 
     result.success(null)
   }
 
   private fun handlePushNotificationOpen(call: MethodCall, result: Result) {
+    val logger = getAppEventsLogger(result) ?: return
     val action = call.argument<String>("action")
     val payload = call.argument<Map<String, Any>>("payload")
     val payloadBundle = createBundleFromMap(payload)
@@ -222,15 +278,16 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     }
 
     if (action != null) {
-      appEventsLogger.logPushNotificationOpen(payloadBundle, action)
+      logger.logPushNotificationOpen(payloadBundle, action)
     } else {
-      appEventsLogger.logPushNotificationOpen(payloadBundle)
+      logger.logPushNotificationOpen(payloadBundle)
     }
 
     result.success(null)
   }
 
   private fun handleSetUserId(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val id = call.arguments as? String
     if (id == null) {
       result.error("INVALID_ARGUMENT", "User ID is required", null)
@@ -273,12 +330,14 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetAutoLogAppEventsEnabled(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val enabled = call.arguments as? Boolean ?: false
     FacebookSdk.setAutoLogAppEventsEnabled(enabled)
     result.success(null)
   }
 
   private fun handleSetDataProcessingOptions(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val options = call.argument<ArrayList<String>>("options") ?: arrayListOf()
     val country = call.argument<Int>("country") ?: 0
     val state = call.argument<Int>("state") ?: 0
@@ -288,6 +347,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handlePurchased(call: MethodCall, result: Result) {
+    val logger = getAppEventsLogger(result) ?: return
     val amount = call.argument<Double>("amount")?.toBigDecimal()
     val currencyCode = call.argument<String>("currency")
     if (amount == null || currencyCode == null) {
@@ -302,11 +362,12 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     val parameters = call.argument<Map<String, Any>>("parameters")
     val parameterBundle = createBundleFromMap(parameters) ?: Bundle()
 
-    appEventsLogger.logPurchase(amount, currency, parameterBundle)
+    logger.logPurchase(amount, currency, parameterBundle)
     result.success(null)
   }
 
   private fun handleLogProductItem(call: MethodCall, result: Result) {
+    val logger = getAppEventsLogger(result) ?: return
     val itemId = call.argument<String>("itemId")
     val availabilityToken = call.argument<String>("availability")
     val conditionToken = call.argument<String>("condition")
@@ -347,7 +408,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     val parameters = call.argument<Map<String, Any>>("parameters")
     val parameterBundle = createBundleFromMap(parameters) ?: Bundle()
 
-    appEventsLogger.logProductItem(
+    logger.logProductItem(
       itemId,
       availability,
       condition,
@@ -395,6 +456,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetPushNotificationToken(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val token = call.arguments as? String
     if (token == null) {
       result.error("INVALID_ARGUMENT", "Push notification token is required", null)
@@ -405,6 +467,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetFlushBehavior(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val behavior = when (call.arguments as? String) {
       "explicitOnly" -> AppEventsLogger.FlushBehavior.EXPLICIT_ONLY
       else -> AppEventsLogger.FlushBehavior.AUTO
@@ -414,6 +477,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleGetFlushBehavior(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val token = when (AppEventsLogger.getFlushBehavior()) {
       AppEventsLogger.FlushBehavior.EXPLICIT_ONLY -> "explicitOnly"
       else -> "auto"
@@ -422,14 +486,17 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleGetUserData(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     result.success(AppEventsLogger.getUserData())
   }
 
   private fun handleGetUserId(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     result.success(AppEventsLogger.getUserID())
   }
 
   private fun handleClearUserDataForType(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     // Android's AppEventsLogger has no per-field clear; this is intentionally a
     // no-op. Use clearUserData() to clear all fields. See README "Known Limitations".
     Log.w(logTag, "clearUserDataForType is not supported on Android; use clearUserData() to clear all fields.")
@@ -437,6 +504,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   }
 
   private fun handleSetDebugLoggingEnabled(call: MethodCall, result: Result) {
+    if (!requireConfigured(result)) return
     val enabled = call.arguments as? Boolean ?: false
     FacebookSdk.setIsDebugEnabled(enabled)
     if (enabled) {

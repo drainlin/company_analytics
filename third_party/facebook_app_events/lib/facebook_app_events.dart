@@ -74,6 +74,20 @@ class FacebookAppEvents {
   static const paramValueYes = "1";
   static const paramValueNo = "0";
 
+  /// Configures the native Facebook SDK before event logging.
+  ///
+  /// Use this when the app id and client token are loaded at runtime instead
+  /// of being declared in AndroidManifest.xml or Info.plist.
+  Future<void> configure({
+    required String appId,
+    required String clientToken,
+  }) {
+    return _channel.invokeMethod<void>('configure', <String, dynamic>{
+      'appId': appId,
+      'clientToken': clientToken,
+    });
+  }
+
   /// Parameter key used to specify a generic content type/family for the logged event, e.g.
   /// "music", "photo", "video".  Options to use will vary depending on the nature of the app.
   static const paramNameContentType = "fb_content_type";

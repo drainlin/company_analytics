@@ -10,10 +10,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  crypto: ^3.0.7
   facebook_app_events:
     path: third_party/facebook_app_events
   singular_flutter_sdk:
     path: third_party/singular_flutter_sdk
+  shared_preferences: ^2.5.5
   yaml: any
 
 dev_dependencies:

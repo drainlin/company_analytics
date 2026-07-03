@@ -1,11 +1,8 @@
-# company_analytics
+# company_analytics 开发文档
 
-内部统一埋点 SDK（Flutter package），封装：
+这个包是项目内统一埋点入口，封装仓库内置的 Facebook App Events 和 Singular Flutter SDK。
 
-- `facebook_app_events`
-- `singular_flutter_sdk`
-
-目的：让业务同学只接一层 API，减少平台配置和调用方式不一致带来的错误。
+当前主流程是运行时远程配置：启动时从 URL 拉取 JSON，按平台解析参数，再由 Flutter 传给 Facebook / Singular 初始化。开发期不再把 Facebook app id、client token 或 Singular key 预先写入业务工程。
 
 ## 环境要求
 
@@ -16,59 +13,161 @@
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
 
-## 提供能力
+## 本地远程配置服务
 
-- 统一 API：`init` / `track` / `setUserId` / `clearUser`
-- 初始化幂等：重复调用 `init` 不会重复初始化
-- 初始化前事件缓存：默认会排队，初始化后自动补发
-- 事件路由控制：可按事件选择发 Facebook / Singular
-- 统一异常：`AnalyticsInitializationException`、`AnalyticsNotInitializedException`
+开发期编辑：
 
-## 安装
+- [analytics.remote.dev.json](/Users/yulin/Projects/event_manager/config/analytics.remote.dev.json)
 
-在业务工程 `pubspec.yaml` 引入：
-
-```yaml
-dependencies:
-  company_analytics:
-    path: ../company_analytics
-```
-
-执行：
+启动服务：
 
 ```bash
-flutter pub get
+bash tool/serve_remote_config.sh
 ```
 
-## 快速开始
+访问地址：
 
-### 1) 全局初始化
+- iOS Simulator / desktop: `http://127.0.0.1:8765/analytics.remote.dev.json`
+- Android Emulator: `http://10.0.2.2:8765/analytics.remote.dev.json`
 
-建议在 `main()` 启动后尽早初始化：
+校验当前服务内容：
+
+```bash
+curl -fsS http://127.0.0.1:8765/analytics.remote.dev.json
+```
+
+## JSON 结构
+
+配置放在同一个 JSON 文件里，用 `ios` 和 `android` 字段区分平台：
+
+```json
+{
+  "version": 1,
+  "enable_facebook": true,
+  "enable_singular": true,
+  "facebook": {
+    "ios": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_IOS",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
+    },
+    "android": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_ANDROID",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
+    },
+    "auto_log_app_events_enabled": true,
+    "advertiser_tracking_enabled": true
+  },
+  "singular": {
+    "ios": {
+      "api_key": "YOUR_SINGULAR_API_KEY_IOS",
+      "secret": "YOUR_SINGULAR_SECRET_IOS"
+    },
+    "android": {
+      "api_key": "YOUR_SINGULAR_API_KEY_ANDROID",
+      "secret": "YOUR_SINGULAR_SECRET_ANDROID"
+    },
+    "enable_logging": true,
+    "wait_for_tracking_auth_seconds": 15
+  }
+}
+```
+
+字段说明：
+
+- `version`: 配置版本，写入缓存 metadata，便于排查。
+- `enable_facebook`: 是否启用 Facebook provider。
+- `enable_singular`: 是否启用 Singular provider。
+- `facebook.ios/android.app_id`: 当前平台 Facebook app id。
+- `facebook.ios/android.client_token`: 当前平台 Facebook client token。
+- `facebook.auto_log_app_events_enabled`: 传给 Facebook SDK 的自动事件开关。
+- `facebook.advertiser_tracking_enabled`: 传给 Facebook SDK 的 advertiser tracking 开关。
+- `singular.ios/android.api_key`: 当前平台 Singular api key。
+- `singular.ios/android.secret`: 当前平台 Singular secret。
+- `singular.enable_logging`: Singular 日志开关，生产环境建议关闭。
+- `singular.wait_for_tracking_auth_seconds`: Singular 等待 ATT 授权的秒数。
+
+## 初始化流程
+
+业务侧推荐只调用 `initFromRemoteConfig()`：
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
-import 'package:your_app/generated/analytics_env.g.dart';
 
 final analytics = CompanyAnalytics();
 
 Future<void> initAnalytics() async {
-  await analytics.init(
-    const AnalyticsConfig(
-      singularApiKey: AnalyticsEnv.singularApiKey,
-      singularSecret: AnalyticsEnv.singularSecret,
-      enableFacebook: true,
-      enableSingular: true,
-      facebookAutoLogAppEventsEnabled: true,
-      facebookAdvertiserTrackingEnabled: true,
-      singularEnableLogging: false,
-      singularWaitForTrackingAuthSeconds: 15,
+  await analytics.initFromRemoteConfig(
+    RemoteAnalyticsConfig(
+      url: Uri.parse(
+        'http://127.0.0.1:8765/analytics.remote.dev.json',
+      ),
+      timeout: const Duration(seconds: 3),
+      useCachedConfigOnFailure: true,
     ),
   );
 }
 ```
 
-### 2) 上报普通事件
+初始化顺序：
+
+1. `RemoteAnalyticsConfigLoader` 请求 URL。
+2. 按当前平台解析 JSON。
+3. 校验 `AnalyticsConfig`。
+4. Facebook provider 调用 `FacebookAppEvents.configure(appId, clientToken)`。
+5. Facebook native SDK 在收到 runtime 参数后初始化。
+6. Singular provider 使用 runtime key/secret 初始化。
+7. 初始化前缓存的事件开始补发。
+
+## 缓存与变更检测
+
+远程请求成功后会缓存原始 JSON 和 metadata。远程失败时，如果 `useCachedConfigOnFailure` 为 `true`，会回退到上一次成功缓存。
+
+```dart
+final loader = RemoteAnalyticsConfigLoader();
+final remoteConfig = RemoteAnalyticsConfig(
+  url: Uri.parse('http://127.0.0.1:8765/analytics.remote.dev.json'),
+);
+
+final result = await loader.loadResult(remoteConfig);
+
+print(result.source); // RemoteAnalyticsConfigSource.remote/cache
+print(result.changedFromCache);
+print(result.metadata?.version);
+print(result.metadata?.sha256);
+print(result.previousMetadata?.sha256);
+```
+
+`changedFromCache` 的语义：
+
+- 本次远程请求成功，且已有缓存 metadata，并且新旧 `sha256` 不同：`true`
+- 首次成功拉取，没有旧缓存：`false`
+- 远程失败，使用缓存：`false`
+
+清理缓存：
+
+```dart
+await loader.clearCache(remoteConfig);
+```
+
+## 平台配置原则
+
+不要再把以下值写入业务工程的 `Info.plist`、`AndroidManifest.xml` 或 Android resources：
+
+- Facebook app id
+- Facebook client token
+- Singular api key
+- Singular secret
+
+仍需保留 SDK 正常运行需要的平台能力配置，例如：
+
+- iOS ATT 权限说明和授权流程
+- iOS/Android deep link 或 URL scheme 能力，如果业务场景需要
+- Android install referrer
+- Android Proguard / R8 保留规则
+
+## 事件上报
+
+普通事件：
 
 ```dart
 await analytics.track(
@@ -82,9 +181,7 @@ await analytics.track(
 );
 ```
 
-### 3) 上报收入事件
-
-当 `valueToSum + revenueCurrency` 同时存在时，会按收入事件处理：
+收入事件：
 
 ```dart
 await analytics.track(
@@ -100,19 +197,7 @@ await analytics.track(
 );
 ```
 
-### 4) 登录态同步
-
-```dart
-await analytics.setUserId('user_123');
-await analytics.clearUser();
-```
-
-## 事件路由
-
-默认一个事件同时发 Facebook + Singular。你可以按事件控制：
-
-- 仅 Facebook：`sendToSingular: false`
-- 仅 Singular：`sendToFacebook: false`
+事件路由：
 
 ```dart
 await analytics.track(
@@ -123,336 +208,86 @@ await analytics.track(
 );
 ```
 
-## 初始化前调用策略
+登录态：
+
+```dart
+await analytics.setUserId('user_123');
+await analytics.clearUser();
+```
+
+## 初始化前事件策略
 
 默认策略：`track()` 在 `init()` 前被调用时，事件会先缓存，初始化成功后补发。
 
-如需严格模式（初始化前直接抛错）：
+严格模式：
 
 ```dart
 final analytics = CompanyAnalytics(failFastBeforeInit: true);
 ```
 
-## 团队接入规范（建议强制）
+## 排查顺序
 
-- 业务代码禁止直接 import：
-  - `facebook_app_events`
-  - `singular_flutter_sdk`
-- 事件名统一维护在一个文件（如 `analytics_event_names.dart`）
-- `init()` 仅允许在 App 生命周期内调用一次
-- 生产环境关闭 `singularEnableLogging`
-- 事件参数 key 命名保持稳定，避免频繁改名
+初始化失败：
 
-## 平台配置清单
+1. 确认 URL 能访问，并返回合法 JSON。
+2. 确认当前平台分支存在，例如 iOS 有 `facebook.ios` 和 `singular.ios`。
+3. 确认启用的 provider 对应字段非空。
+4. 查看 `AnalyticsInitializationException` 的 inner error。
+5. 查看 `analytics.lastRemoteConfigResult` 或 `RemoteAnalyticsConfigLoader.loadResult()`。
 
-这个包只统一 Flutter 调用层，不替代平台原生配置。
+事件没有上报：
 
-### iOS
+1. 确认 `initFromRemoteConfig()` 已成功完成。
+2. 确认事件没有被 `sendToFacebook` / `sendToSingular` 路由关闭。
+3. 调试环境打开 `singular.enable_logging`。
+4. 检查 Facebook / Singular 平台侧必要能力配置。
 
-- Facebook：`Info.plist` 配置 `FacebookAppID`、`FacebookClientToken`、URL Scheme
-- Singular：按官方文档完成 iOS 集成与能力配置
-- ATT 策略与 `singularWaitForTrackingAuthSeconds` 一致
+远程配置没有生效：
 
-### Android
-
-- Facebook：`AndroidManifest.xml` 配置 `facebook_app_id`、`facebook_client_token`
-- Singular：按官方文档完成 install referrer 与 required metadata
-- 混淆场景确认 Proguard / R8 保留规则
-
-## 一键自检（推荐）
-
-为了避免同事漏改原生配置，仓库内提供了检查脚本：
-
-- [check_facebook_setup.sh](/Users/yulin/Projects/event_manager/company_analytics/tool/check_facebook_setup.sh)
-
-在业务工程根目录运行：
-
-```bash
-bash ../company_analytics/tool/check_facebook_setup.sh .
-```
-
-或者传入业务工程路径：
-
-```bash
-bash /Users/yulin/Projects/event_manager/company_analytics/tool/check_facebook_setup.sh /path/to/your_app
-```
-
-脚本会检查：
-
-- Android:
-  - `android/app/src/main/res/values/facebook_config.xml`（或 `strings.xml`）是否包含 `facebook_app_id` / `facebook_client_token`
-  - `android/app/src/main/AndroidManifest.xml` 是否包含 Facebook 的 `meta-data`
-- iOS:
-  - `ios/Runner/Info.plist` 是否包含 `FacebookAppID` / `FacebookClientToken`
-  - 是否存在 `fb<APP_ID>` URL Scheme（`CFBundleURLTypes`）
-
-## 用 YAML 自动生成原生配置（推荐）
-
-你可以把 key 放在 YAML，再用脚本自动生成 Android/iOS 配置。
-
-### 一键命令（推荐）
-
-在宿主工程根目录执行：
-
-```bash
-bash ../company_analytics/tool/setup_analytics.sh --app-root .
-```
-
-这个命令会自动做三件事：
-
-1. 如果配置文件不存在，自动创建模板：`./config/company_analytics.yaml`
-2. 自动模板化原生文件（`AndroidManifest.xml` / `Info.plist`）
-3. 根据 YAML 生成 Android/iOS/Dart 配置并自检
-
-说明：
-
-- 原生模板化是“清理并覆盖”模式：
-  - 会清理旧的 Facebook `meta-data` / URL Scheme
-  - 再写入统一模板，避免历史配置残留
-  - iOS 会自动设置：
-    - `FacebookAdvertiserIDCollectionEnabled = true`
-    - `FacebookAutoLogAppEventsEnabled = true`
-
-如果第一次运行，会提示你先填写 YAML key，再执行同一条命令即可。
-
-### 手动分步（可选）
-
-#### 1) 在宿主工程创建配置模板
-
-在“业务 Flutter 工程”里执行：
-
-```bash
-bash ../company_analytics/tool/sync_analytics_config.sh \
-  --app-root . \
-  --init-template
-```
-
-默认会创建：
-
-- `./config/company_analytics.yaml`
-
-编辑 `config/company_analytics.yaml`：
-
-```yaml
-facebook:
-  ios:
-    app_id: "123456789012345"
-    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
-    display_name: "Event Manager iOS"
-  android:
-    app_id: "123456789012345"
-    client_token: "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
-    display_name: "Event Manager Android"
-
-singular:
-  ios:
-    api_key: "YOUR_SINGULAR_API_KEY_IOS"
-    secret: "YOUR_SINGULAR_SECRET_IOS"
-  android:
-    api_key: "YOUR_SINGULAR_API_KEY_ANDROID"
-    secret: "YOUR_SINGULAR_SECRET_ANDROID"
-```
-
-兼容说明：
-
-- 仍兼容旧格式（`facebook.app_id` / `singular.api_key`）
-- 若同时存在平台化和旧格式，优先使用平台化字段
-
-### 2) 套用原生模板（一次性）
-
-```bash
-bash ../company_analytics/tool/apply_native_templates.sh .
-```
-
-### 3) 生成原生配置
-
-```bash
-bash ../company_analytics/tool/sync_analytics_config.sh \
-  --app-root .
-```
-
-如果你想用自定义路径：
-
-```bash
-bash ../company_analytics/tool/sync_analytics_config.sh \
-  --app-root . \
-  --config ./config/company_analytics.prod.yaml
-```
-
-会生成/更新：
-
-- Android: `android/app/src/main/res/values/facebook_config.xml`
-- iOS: `ios/Flutter/FacebookConfig.xcconfig`
-- iOS: 自动确保 `Debug/Release/Profile.xcconfig` 包含 `FacebookConfig.xcconfig`
-- Dart: `lib/generated/analytics_env.g.dart`（含平台化常量与向后兼容别名）
-
-### 3) 在 init 中使用 YAML 生成的 Singular Key
-### 4) 在 init 中使用 YAML 生成的 Singular Key
-
-```dart
-import 'package:company_analytics/company_analytics.dart';
-import 'package:your_app/generated/analytics_env.g.dart';
-
-Future<void> initAnalytics(CompanyAnalytics analytics) async {
-  await analytics.init(
-    const AnalyticsConfig(
-      singularApiKey: AnalyticsEnv.singularIosApiKey,
-      singularSecret: AnalyticsEnv.singularIosSecret,
-      enableFacebook: true,
-      enableSingular: true,
-      facebookAutoLogAppEventsEnabled: true,
-      facebookAdvertiserTrackingEnabled: true,
-      singularEnableLogging: false,
-      singularWaitForTrackingAuthSeconds: 15,
-    ),
-  );
-}
-```
-
-### 5) 运行自检
-
-```bash
-bash ../company_analytics/tool/check_facebook_setup.sh .
-```
-
-### 6) 一次性确认 Info.plist 使用变量
-
-`Info.plist` 需要改成变量引用（只需做一次）：
-
-- `FacebookAppID` -> `$(FACEBOOK_APP_ID)`
-- `FacebookClientToken` -> `$(FACEBOOK_CLIENT_TOKEN)`
-- URL Scheme -> `fb$(FACEBOOK_APP_ID)`
-
-## 常见问题
-
-### 1. 初始化失败
-
-症状：抛出 `AnalyticsInitializationException`。
-
-排查顺序：
-
-1. 检查 `singularIosApiKey` / `singularIosSecret`（或你实际使用的平台字段）是否为空
-2. 检查 iOS/Android 平台配置是否完整
-3. 检查是否把两个 provider 都关闭了（`enableFacebook=false` 且 `enableSingular=false`）
-
-### 2. 事件没有上报
-
-排查顺序：
-
-1. 确认 `init()` 已执行成功
-2. 确认事件没有被路由开关关闭（`sendToFacebook` / `sendToSingular`）
-3. 在测试环境打开 `singularEnableLogging` 查看日志
-
-### 3. 初始化前埋点行为不符合预期
-
-- 默认是缓存后补发
-- 需要严格失败时使用 `CompanyAnalytics(failFastBeforeInit: true)`
+1. 确认服务返回的是最新 JSON。
+2. 查看 `result.source` 是否为 `remote`。
+3. 查看 `result.changedFromCache` 和 `sha256`。
+4. 必要时调用 `clearCache()` 后重启应用。
 
 ## 对外 API
 
-当前 `package:company_analytics/company_analytics.dart` 导出以下接口：
+`package:company_analytics/company_analytics.dart` 导出：
 
-### 1) `CompanyAnalytics`
-
-统一埋点入口。
-
-构造：
-
-- `CompanyAnalytics({List<AnalyticsProvider>? providers, bool failFastBeforeInit = false})`
-
-字段：
-
-- `bool get isInitialized`
-
-方法：
-
-- `Future<void> init(AnalyticsConfig config)`
-- `Future<void> track(AnalyticsEvent event)`
-- `Future<void> setUserId(String userId)`
-- `Future<void> clearUser()`
-
-### 2) `AnalyticsConfig`
-
-初始化配置模型。
-
-构造参数（核心）：
-
-- `singularApiKey`
-- `singularSecret`
-- `enableFacebook`
-- `enableSingular`
-- `queueEventsBeforeInit`
-- `failFastOnTrackBeforeInit`
-- `facebookAutoLogAppEventsEnabled`
-- `facebookAdvertiserTrackingEnabled`
-- `singularEnableLogging`
-- `singularWaitForTrackingAuthSeconds`
-
-方法：
-
-- `List<String> validate({bool hasCustomProviders = false})`
-
-### 3) `AnalyticsEvent`
-
-事件模型。
-
-构造参数：
-
-- `name`
-- `parameters`
-- `valueToSum`
-- `revenueCurrency`
-- `sendToFacebook`
-- `sendToSingular`
-
-字段/方法：
-
-- `bool get hasRevenue`
-- `AnalyticsEvent copyWith(...)`
-
-### 4) 异常类型
-
+- `CompanyAnalytics`
+- `AnalyticsConfig`
+- `AnalyticsEvent`
+- `AnalyticsProvider`
+- `RemoteAnalyticsConfig`
+- `RemoteAnalyticsConfigLoader`
+- `RemoteAnalyticsConfigResult`
+- `RemoteAnalyticsConfigMetadata`
+- `RemoteAnalyticsConfigSource`
 - `AnalyticsInitializationException`
 - `AnalyticsNotInitializedException`
+- `InMemoryAnalyticsProvider`
 
-### 5) `AnalyticsSdkSingletons`（原始 SDK 单例访问）
+`AnalyticsSdkSingletons.facebookAppEvents` 和 `AnalyticsSdkSingletons.singular` 仍保留，但已标记 `@Deprecated`。业务代码应优先走 `CompanyAnalytics`。
 
-仅在必须使用底层 SDK 时使用。
+## Legacy 脚本
 
-- `AnalyticsSdkSingletons.facebookAppEvents`（`@Deprecated`）
-- `AnalyticsSdkSingletons.singular`（`@Deprecated`）
+旧 YAML / 原生预填脚本已移动到 `tool/legacy/`，只用于历史项目迁移或排查旧接入方式。新接入不需要执行这些命令。
 
-### 6) `SingularSdkFacade`
+CLI 仍保留兼容入口：
 
-`AnalyticsSdkSingletons.singular` 返回的 facade 类型，公开方法：
-
-- `start(SingularConfig config)`
-- `event(String eventName)`
-- `eventWithArgs(String eventName, Map args)`
-- `customRevenueWithAttributes(String eventName, String currency, double amount, Map attributes)`
-- `setCustomUserId(String customUserId)`
-- `unsetCustomUserId()`
-
-### 7) 测试辅助（不建议业务使用）
-
-- `InMemoryAnalyticsProvider`（`@visibleForTesting`）
-
-## 暴露原始 SDK 单例（带警告）
-
-如果你必须直接调用原始 SDK（例如做某个非常规能力），可以使用：
-
-```dart
-import 'package:company_analytics/company_analytics.dart';
-
-final fb = AnalyticsSdkSingletons.facebookAppEvents; // IDE 会显示 Deprecated 警告
-final singular = AnalyticsSdkSingletons.singular; // IDE 会显示 Deprecated 警告
+```bash
+dart run company_analytics:company_analytics setup --app-root .
+dart run company_analytics:company_analytics sync --app-root .
+dart run company_analytics:company_analytics apply .
+dart run company_analytics:company_analytics check .
 ```
 
-默认行为：
+这些命令会操作旧的 YAML/native 预填流程，不属于当前推荐接入路径。
 
-- 两个 getter 带 `@Deprecated` 标记，使用处会在 IDE/Analyzer 里标黄
-- 目的是提醒同学：直接调用会绕过统一埋点规范
+## 开发校验
 
-## 版本建议
+修改插件后至少运行：
 
-建议将事件定义（名称 + 参数）版本化管理，发布时在变更说明中标注新增/删除/重命名事件，避免数据口径漂移。
+```bash
+flutter analyze
+flutter test
+```

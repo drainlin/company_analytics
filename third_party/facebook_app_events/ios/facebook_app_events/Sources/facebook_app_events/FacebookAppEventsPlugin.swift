@@ -9,22 +9,15 @@ import FBSDKCoreKit
 import FBSDKCoreKit_Basics
 
 public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
+    private var configuredFromDart = false
+    private var graphApiVersion = "v24.0"
+
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(
             name: "flutter.oddbit.id/facebook_app_events",
             binaryMessenger: registrar.messenger()
         )
         let instance = FacebookAppEventsPlugin()
-
-        // Required for FB SDK 9.0, as it does not initialize the SDK automatically any more.
-        // See: https://developers.facebook.com/blog/post/2021/01/19/introducing-facebook-platform-sdk-version-9/
-        // "Removal of Auto Initialization of SDK" section
-        ApplicationDelegate.shared.initializeSDK()
-
-        // Override the Graph API version because Facebook iOS SDK v18.x still defaults to v17.0,
-        // which was removed by Meta on September 12, 2025. This is a known upstream issue:
-        // https://github.com/facebook/facebook-ios-sdk/issues/2610
-        Settings.shared.graphAPIVersion = "v24.0"
 
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
@@ -42,6 +35,9 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
+        guard configuredFromDart else {
+            return false
+        }
         // For Facebook SDK 18.x+, use the simplified URL handling
         return ApplicationDelegate.shared.application(app, open: url, options: options)
     }
@@ -53,6 +49,9 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     /// via its modern `application(_:open:options:)` API. Returns whether the
     /// SDK handled any of the URLs.
     public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {
+        guard configuredFromDart else {
+            return false
+        }
         var handled = false
         for context in URLContexts {
             var options: [UIApplication.OpenURLOptionsKey: Any] = [:]
@@ -76,6 +75,8 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
 
     public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         switch call.method {
+        case "configure":
+            handleConfigure(call, result: result)
         case "activateApp":
             handleActivateApp(call, result: result)
         case "clearUserData":
@@ -131,7 +132,35 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         }
     }
 
+    private func handleConfigure(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let arguments = call.arguments as? [String: Any] ?? [:]
+        guard let appId = arguments["appId"] as? String, !appId.isEmpty,
+              let clientToken = arguments["clientToken"] as? String, !clientToken.isEmpty else {
+            result(FlutterError(code: "INVALID_ARGUMENT", message: "Facebook appId and clientToken are required", details: nil))
+            return
+        }
+
+        Settings.shared.appID = appId
+        Settings.shared.clientToken = clientToken
+        // Override before SDK initialization. Facebook iOS SDK v18.x still defaults
+        // to v17.0, which was removed by Meta on September 12, 2025.
+        Settings.shared.graphAPIVersion = graphApiVersion
+        ApplicationDelegate.shared.initializeSDK()
+        configuredFromDart = true
+        result(nil)
+    }
+
+    private func requireConfigured(_ result: @escaping FlutterResult) -> Bool {
+        guard configuredFromDart else {
+            result(FlutterError(code: "not_configured", message: "Facebook SDK must be configured from Dart before use", details: nil))
+            return false
+        }
+        return true
+    }
+
     private func handleActivateApp(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
+
         let arguments = call.arguments as? [String: Any] ?? [:]
 
         // The override applies per call, matching Android's
@@ -149,11 +178,13 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleClearUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         AppEvents.shared.clearUserData()
         result(nil)
     }
 
     private func handleSetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
 
         // Merge semantics: only update the fields present in the call.
@@ -184,27 +215,28 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleClearUserID(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         AppEvents.shared.userID = nil
         result(nil)
     }
 
     private func handleFlush(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         AppEvents.shared.flush()
         result(nil)
     }
 
     private func handleGetApplicationId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
-        // Settings.shared.appID resolves the Info.plist FacebookAppID by
-        // default and reflects any app id set programmatically on the SDK,
-        // matching Android's `appEventsLogger.applicationId`.
-        result(Settings.shared.appID)
+        result(configuredFromDart ? Settings.shared.appID : nil)
     }
 
     private func handleGetAnonymousId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         result(AppEvents.shared.anonymousID)
     }
 
     private func handleLogEvent(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         guard let eventName = arguments["name"] as? String else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "Event name is required and cannot be null.", details: nil))
@@ -228,6 +260,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handlePushNotificationOpen(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         guard let payload = arguments["payload"] as? [String: Any] else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "Payload is required", details: nil))
@@ -243,6 +276,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetUserId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         guard let id = call.arguments as? String else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "User ID is required", details: nil))
             return
@@ -252,12 +286,14 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetAutoLogAppEventsEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let enabled = call.arguments as? Bool ?? false
         Settings.shared.isAutoLogAppEventsEnabled = enabled
         result(nil)
     }
 
     private func handleSetDataProcessingOptions(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         let options = arguments["options"] as? [String] ?? []
 
@@ -279,6 +315,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handlePurchased(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         guard let amount = arguments["amount"] as? Double,
               let currency = arguments["currency"] as? String else {
@@ -302,11 +339,15 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             result(FlutterError(code: "INVALID_ARGUMENT", message: "Graph API version string is required", details: nil))
             return
         }
-        Settings.shared.graphAPIVersion = version
+        graphApiVersion = version
+        if configuredFromDart {
+            Settings.shared.graphAPIVersion = version
+        }
         result(nil)
     }
 
     private func handleSetAdvertiserTracking(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         let enabled = arguments["enabled"] as? Bool ?? false
         let collectId = arguments["collectId"] as? Bool ?? true
@@ -318,18 +359,21 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetAdvertiserIdCollectionEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let enabled = call.arguments as? Bool ?? false
         Settings.shared.isAdvertiserIDCollectionEnabled = enabled
         result(nil)
     }
 
     private func handleSetLimitEventAndDataUsage(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let enabled = call.arguments as? Bool ?? false
         Settings.shared.isEventDataUsageLimited = enabled
         result(nil)
     }
 
     private func handleLogProductItem(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let arguments = call.arguments as? [String: Any] ?? [:]
         guard let itemId = arguments["itemId"] as? String,
               let availabilityToken = arguments["availability"] as? String,
@@ -401,6 +445,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetPushNotificationToken(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         guard let token = call.arguments as? String else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "Push notification token is required", details: nil))
             return
@@ -414,12 +459,14 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetFlushBehavior(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let behavior: AppEvents.FlushBehavior = (call.arguments as? String) == "explicitOnly" ? .explicitOnly : .auto
         AppEvents.shared.flushBehavior = behavior
         result(nil)
     }
 
     private func handleGetFlushBehavior(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         switch AppEvents.shared.flushBehavior {
         case .explicitOnly:
             result("explicitOnly")
@@ -429,14 +476,17 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleGetUserData(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         result(AppEvents.shared.getUserData())
     }
 
     private func handleGetUserID(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         result(AppEvents.shared.userID)
     }
 
     private func handleClearUserDataForType(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         guard let token = call.arguments as? String,
               let type = Self.userDataType(from: token) else {
             result(FlutterError(code: "INVALID_ARGUMENT", message: "A valid user data field is required", details: nil))
@@ -464,6 +514,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     }
 
     private func handleSetDebugLoggingEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        guard requireConfigured(result) else { return }
         let enabled = call.arguments as? Bool ?? false
         if enabled {
             Settings.shared.enableLoggingBehavior(.appEvents)

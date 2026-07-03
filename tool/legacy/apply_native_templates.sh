@@ -3,7 +3,7 @@ set -euo pipefail
 
 APP_ROOT="${1:-}"
 if [[ -z "$APP_ROOT" ]]; then
-  echo "Usage: bash tool/apply_native_templates.sh <flutter_app_root>" >&2
+  echo "Usage: bash tool/legacy/apply_native_templates.sh <flutter_app_root>" >&2
   exit 2
 fi
 

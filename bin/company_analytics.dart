@@ -16,19 +16,19 @@ void main(List<String> args) async {
 
   switch (command) {
     case 'setup':
-      scriptPath = '$packageRoot/tool/setup_analytics.sh';
+      scriptPath = '$packageRoot/tool/legacy/setup_analytics.sh';
       scriptArgs = _normalizeAppRoot(rest);
       break;
     case 'sync':
-      scriptPath = '$packageRoot/tool/sync_analytics_config.sh';
+      scriptPath = '$packageRoot/tool/legacy/sync_analytics_config.sh';
       scriptArgs = _normalizeAppRoot(rest);
       break;
     case 'apply':
-      scriptPath = '$packageRoot/tool/apply_native_templates.sh';
+      scriptPath = '$packageRoot/tool/legacy/apply_native_templates.sh';
       scriptArgs = _normalizePositionalAppRoot(rest);
       break;
     case 'check':
-      scriptPath = '$packageRoot/tool/check_facebook_setup.sh';
+      scriptPath = '$packageRoot/tool/legacy/check_facebook_setup.sh';
       scriptArgs = _normalizePositionalAppRoot(rest);
       break;
     default:
@@ -92,10 +92,10 @@ void _printHelp() {
   );
   stdout.writeln('');
   stdout.writeln('Commands:');
-  stdout.writeln('  setup   Run setup_analytics.sh');
-  stdout.writeln('  sync    Run sync_analytics_config.sh');
-  stdout.writeln('  apply   Run apply_native_templates.sh');
-  stdout.writeln('  check   Run check_facebook_setup.sh');
+  stdout.writeln('  setup   Run legacy setup_analytics.sh');
+  stdout.writeln('  sync    Run legacy sync_analytics_config.sh');
+  stdout.writeln('  apply   Run legacy apply_native_templates.sh');
+  stdout.writeln('  check   Run legacy check_facebook_setup.sh');
   stdout.writeln('');
   stdout.writeln('Examples:');
   stdout.writeln(

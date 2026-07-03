@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "enable_facebook": true,
+  "enable_singular": true,
+  "facebook": {
+    "ios": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_IOS",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
+    },
+    "android": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_ANDROID",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
+    },
+    "auto_log_app_events_enabled": true,
+    "advertiser_tracking_enabled": true
+  },
+  "singular": {
+    "ios": {
+      "api_key": "YOUR_SINGULAR_API_KEY_IOS",
+      "secret": "YOUR_SINGULAR_SECRET_IOS"
+    },
+    "android": {
+      "api_key": "YOUR_SINGULAR_API_KEY_ANDROID",
+      "secret": "YOUR_SINGULAR_SECRET_ANDROID"
+    },
+    "enable_logging": true,
+    "wait_for_tracking_auth_seconds": 15
+  }
+}

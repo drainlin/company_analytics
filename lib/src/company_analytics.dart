@@ -8,6 +8,7 @@ import 'analytics_exception.dart';
 import 'analytics_provider.dart';
 import 'providers/facebook_provider.dart';
 import 'providers/singular_provider.dart';
+import 'remote_analytics_config.dart';
 
 class CompanyAnalytics {
   CompanyAnalytics({
@@ -23,9 +24,14 @@ class CompanyAnalytics {
   bool _isInitializing = false;
 
   AnalyticsConfig? _config;
+  RemoteAnalyticsConfigResult? _lastRemoteConfigResult;
   List<AnalyticsProvider> _providers = const <AnalyticsProvider>[];
 
   bool get isInitialized => _isInitialized;
+
+  RemoteAnalyticsConfigResult? get lastRemoteConfigResult {
+    return _lastRemoteConfigResult;
+  }
 
   Future<void> init(AnalyticsConfig config) async {
     if (_isInitialized || _isInitializing) {
@@ -63,6 +69,16 @@ class CompanyAnalytics {
         error,
       );
     }
+  }
+
+  Future<void> initFromRemoteConfig(
+    RemoteAnalyticsConfig remoteConfig, {
+    RemoteAnalyticsConfigLoader? loader,
+  }) async {
+    final configLoader = loader ?? RemoteAnalyticsConfigLoader();
+    final result = await configLoader.loadResult(remoteConfig);
+    _lastRemoteConfigResult = result;
+    await init(result.config);
   }
 
   Future<void> track(AnalyticsEvent event) async {
@@ -138,6 +154,8 @@ class CompanyAnalytics {
     if (config.enableFacebook) {
       providers.add(
         FacebookAnalyticsProvider(
+          appId: config.facebookAppId,
+          clientToken: config.facebookClientToken,
           autoLogAppEventsEnabled: config.facebookAutoLogAppEventsEnabled,
           advertiserTrackingEnabled: config.facebookAdvertiserTrackingEnabled,
         ),

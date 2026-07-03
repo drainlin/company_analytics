@@ -2,6 +2,8 @@ class AnalyticsConfig {
   const AnalyticsConfig({
     required this.singularApiKey,
     required this.singularSecret,
+    this.facebookAppId,
+    this.facebookClientToken,
     this.enableFacebook = true,
     this.enableSingular = true,
     this.queueEventsBeforeInit = true,
@@ -14,6 +16,8 @@ class AnalyticsConfig {
 
   final String singularApiKey;
   final String singularSecret;
+  final String? facebookAppId;
+  final String? facebookClientToken;
 
   final bool enableFacebook;
   final bool enableSingular;
@@ -34,11 +38,29 @@ class AnalyticsConfig {
       errors.add('At least one analytics provider must be enabled.');
     }
 
-    if (enableSingular && singularApiKey.trim().isEmpty) {
+    final shouldValidateDefaultProviders = !hasCustomProviders;
+
+    if (shouldValidateDefaultProviders &&
+        enableFacebook &&
+        (facebookAppId == null || facebookAppId!.trim().isEmpty)) {
+      errors.add('Facebook app id is required when Facebook is enabled.');
+    }
+
+    if (shouldValidateDefaultProviders &&
+        enableFacebook &&
+        (facebookClientToken == null || facebookClientToken!.trim().isEmpty)) {
+      errors.add('Facebook client token is required when Facebook is enabled.');
+    }
+
+    if (shouldValidateDefaultProviders &&
+        enableSingular &&
+        singularApiKey.trim().isEmpty) {
       errors.add('Singular api key is required when Singular is enabled.');
     }
 
-    if (enableSingular && singularSecret.trim().isEmpty) {
+    if (shouldValidateDefaultProviders &&
+        enableSingular &&
+        singularSecret.trim().isEmpty) {
       errors.add('Singular secret is required when Singular is enabled.');
     }
 

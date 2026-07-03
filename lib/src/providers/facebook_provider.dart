@@ -7,12 +7,16 @@ import '../sdk_singletons.dart';
 class FacebookAnalyticsProvider implements AnalyticsProvider {
   FacebookAnalyticsProvider({
     FacebookAppEvents? appEvents,
+    this.appId,
+    this.clientToken,
     this.autoLogAppEventsEnabled,
     this.advertiserTrackingEnabled,
   }) : _appEvents =
            appEvents ?? AnalyticsSdkSingletons.facebookAppEventsInternal;
 
   final FacebookAppEvents _appEvents;
+  final String? appId;
+  final String? clientToken;
   final bool? autoLogAppEventsEnabled;
   final bool? advertiserTrackingEnabled;
 
@@ -21,6 +25,22 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
 
   @override
   Future<void> initialize() async {
+    final resolvedAppId = appId?.trim();
+    final resolvedClientToken = clientToken?.trim();
+    if (resolvedAppId == null ||
+        resolvedAppId.isEmpty ||
+        resolvedClientToken == null ||
+        resolvedClientToken.isEmpty) {
+      throw StateError(
+        'Facebook app id and client token are required before initializing Facebook analytics.',
+      );
+    }
+
+    await _appEvents.configure(
+      appId: resolvedAppId,
+      clientToken: resolvedClientToken,
+    );
+
     if (autoLogAppEventsEnabled != null) {
       await _appEvents.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled!);
     }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PACKAGE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 APP_ROOT=""
 CONFIG_PATH=""
@@ -10,13 +10,13 @@ CONFIG_PATH=""
 usage() {
   cat <<USAGE
 Usage:
-  bash tool/setup_analytics.sh --app-root <flutter_app_root> [--config <yaml_path>]
+  bash tool/legacy/setup_analytics.sh --app-root <flutter_app_root> [--config <yaml_path>]
 
 Default config path:
   <app-root>/config/company_analytics.yaml
 
 Example:
-  bash tool/setup_analytics.sh --app-root .
+  bash tool/legacy/setup_analytics.sh --app-root .
 USAGE
 }
 
@@ -67,12 +67,12 @@ if rg -n "YOUR_|123456789012345" "$CONFIG_PATH" >/dev/null 2>&1; then
 fi
 
 echo "[1/3] Applying native template..."
-bash "$PACKAGE_ROOT/tool/apply_native_templates.sh" "$APP_ROOT"
+bash "$PACKAGE_ROOT/tool/legacy/apply_native_templates.sh" "$APP_ROOT"
 
 echo "[2/3] Syncing analytics config..."
-bash "$PACKAGE_ROOT/tool/sync_analytics_config.sh" --app-root "$APP_ROOT" --config "$CONFIG_PATH"
+bash "$PACKAGE_ROOT/tool/legacy/sync_analytics_config.sh" --app-root "$APP_ROOT" --config "$CONFIG_PATH"
 
 echo "[3/3] Verifying native setup..."
-bash "$PACKAGE_ROOT/tool/check_facebook_setup.sh" "$APP_ROOT"
+bash "$PACKAGE_ROOT/tool/legacy/check_facebook_setup.sh" "$APP_ROOT"
 
 echo "All done. Native template + analytics config sync + verification passed."

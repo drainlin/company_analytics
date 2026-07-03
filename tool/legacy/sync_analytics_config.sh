@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PACKAGE_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PACKAGE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 APP_ROOT=""
 CONFIG_PATH=""
@@ -11,15 +11,15 @@ INIT_TEMPLATE="false"
 usage() {
   cat <<USAGE
 Usage:
-  bash tool/sync_analytics_config.sh --app-root <flutter_app_root> [--config <yaml_path>] [--init-template]
+  bash tool/legacy/sync_analytics_config.sh --app-root <flutter_app_root> [--config <yaml_path>] [--init-template]
 
 Example:
-  bash tool/sync_analytics_config.sh \
+  bash tool/legacy/sync_analytics_config.sh \
     --app-root /path/to/your_flutter_app \
     --config /path/to/your_flutter_app/config/company_analytics.yaml
 
 Init template only:
-  bash tool/sync_analytics_config.sh --app-root /path/to/your_flutter_app --init-template
+  bash tool/legacy/sync_analytics_config.sh --app-root /path/to/your_flutter_app --init-template
 USAGE
 }
 
@@ -82,6 +82,6 @@ if [[ ! -f "$PACKAGE_CONFIG" ]]; then
   exit 2
 fi
 
-dart --packages="$PACKAGE_CONFIG" "$PACKAGE_ROOT/tool/sync_analytics_config.dart" \
+dart --packages="$PACKAGE_CONFIG" "$PACKAGE_ROOT/tool/legacy/sync_analytics_config.dart" \
   --app-root "$APP_ROOT" \
   --config "$CONFIG_PATH"
