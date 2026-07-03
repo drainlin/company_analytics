@@ -10,6 +10,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  app_tracking_transparency: ^2.0.7
   crypto: ^3.0.7
   facebook_app_events:
     path: third_party/facebook_app_events

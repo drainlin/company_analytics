@@ -9,15 +9,20 @@ import 'analytics_provider.dart';
 import 'providers/facebook_provider.dart';
 import 'providers/singular_provider.dart';
 import 'remote_analytics_config.dart';
+import 'tracking_authorization.dart';
 
 class CompanyAnalytics {
   CompanyAnalytics({
     List<AnalyticsProvider>? providers,
     this.failFastBeforeInit = false,
-  }) : _customProviders = providers;
+    TrackingAuthorizationRequester? trackingAuthorizationRequester,
+  }) : _customProviders = providers,
+       _trackingAuthorizationRequester =
+           trackingAuthorizationRequester ?? AppTrackingTransparencyRequester();
 
   final List<AnalyticsProvider>? _customProviders;
   final bool failFastBeforeInit;
+  final TrackingAuthorizationRequester _trackingAuthorizationRequester;
   final Queue<AnalyticsEvent> _pendingEvents = Queue<AnalyticsEvent>();
 
   bool _isInitialized = false;
@@ -50,9 +55,11 @@ class CompanyAnalytics {
 
     _isInitializing = true;
     _config = config;
-    _providers = _customProviders ?? _buildDefaultProviders(config);
 
     try {
+      await _trackingAuthorizationRequester.requestIfNeeded();
+      _providers = _customProviders ?? _buildDefaultProviders(config);
+
       for (final provider in _providers) {
         await provider.initialize();
       }

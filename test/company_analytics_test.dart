@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:company_analytics/company_analytics.dart';
 import 'package:company_analytics/src/providers/facebook_provider.dart';
+import 'package:company_analytics/src/tracking_authorization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -91,6 +92,29 @@ void main() {
         analytics.lastRemoteConfigResult?.source,
         RemoteAnalyticsConfigSource.remote,
       );
+    });
+
+    test('requests ATT after config load and before provider init', () async {
+      final order = <String>[];
+      final provider = _OrderingAnalyticsProvider(order);
+      final requester = _RecordingTrackingAuthorizationRequester(order);
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: _FakeConfigHttpClient(_remoteJson),
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.iOS,
+      );
+      final analytics = CompanyAnalytics(
+        providers: <InMemoryAnalyticsProvider>[provider],
+        trackingAuthorizationRequester: requester,
+      );
+
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: loader,
+      );
+
+      expect(requester.requestCount, 1);
+      expect(order, <String>['att', 'provider']);
     });
 
     test(
@@ -442,5 +466,30 @@ class _MemoryConfigCache implements AnalyticsConfigCache {
   @override
   Future<void> delete(String key) async {
     values.remove(key);
+  }
+}
+
+class _RecordingTrackingAuthorizationRequester
+    implements TrackingAuthorizationRequester {
+  _RecordingTrackingAuthorizationRequester(this.order);
+
+  final List<String> order;
+  int requestCount = 0;
+
+  @override
+  Future<void> requestIfNeeded() async {
+    requestCount += 1;
+    order.add('att');
+  }
+}
+
+class _OrderingAnalyticsProvider extends InMemoryAnalyticsProvider {
+  _OrderingAnalyticsProvider(this.order);
+
+  final List<String> order;
+
+  @override
+  Future<void> initialize() async {
+    order.add('provider');
   }
 }

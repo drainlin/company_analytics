@@ -12,6 +12,7 @@
 - Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.1`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
+- App Tracking Transparency Flutter SDK: `^2.0.7`
 
 ## 安装
 
@@ -115,7 +116,7 @@ JSON 使用同一个文件，并在文件内区分 iOS 和 Android：
 
 ## 初始化
 
-建议在 `main()` 启动早期初始化：
+建议在首屏渲染后或业务自定义 ATT 说明弹窗后初始化。iOS 会在 `initFromRemoteConfig()` 内部请求 ATT，因此不要在 `runApp()` 之前 `await` 这个初始化；SDK 仍会等到 ATT 检查完成后才启动。
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
@@ -209,7 +210,16 @@ await analytics.track(
 - Facebook app id 和 client token 由远程 JSON 传入，不再依赖 `Info.plist` 或 Android resources。
 - Facebook SDK 已改为延迟初始化：Flutter 传入 app id 和 client token 后才会启动。
 - Singular api key 和 secret 由远程 JSON 传入。
-- 仍需按 Facebook / Singular 官方要求保留宿主工程必要的平台能力配置，例如 ATT、install referrer、URL/deep link 能力、混淆规则等。
+- iOS 会在远程配置解析成功后、Facebook / Singular native SDK 初始化前检查 ATT；状态为 `notDetermined` 时必定请求系统权限。
+- 宿主 iOS 工程必须在 `Info.plist` 添加 `NSUserTrackingUsageDescription`。
+- 仍需按 Facebook / Singular 官方要求保留宿主工程必要的平台能力配置，例如 install referrer、URL/deep link 能力、混淆规则等。
+
+iOS `Info.plist` 示例：
+
+```xml
+<key>NSUserTrackingUsageDescription</key>
+<string>This identifier will be used to deliver personalized ads and attribution analytics.</string>
+```
 
 ## Legacy 工具
 

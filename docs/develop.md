@@ -12,6 +12,7 @@
 - Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.1`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
+- App Tracking Transparency Flutter SDK: `^2.0.7`
 
 ## 远程配置服务
 
@@ -108,7 +109,7 @@ curl -fsS http://127.0.0.1:8765/analytics.remote.dev.json
 
 ## 初始化流程
 
-业务侧推荐只调用 `initFromRemoteConfig()`：
+业务侧推荐只调用 `initFromRemoteConfig()`。iOS 会在这个流程内请求 ATT，因此业务侧应在首屏渲染后或自定义 ATT 说明弹窗后调用，不要在 `runApp()` 之前 `await` 初始化。
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
@@ -133,10 +134,11 @@ Future<void> initAnalytics() async {
 1. `RemoteAnalyticsConfigLoader` 请求 URL。
 2. 按当前平台解析 JSON。
 3. 校验 `AnalyticsConfig`。
-4. Facebook provider 调用 `FacebookAppEvents.configure(appId, clientToken)`。
-5. Facebook native SDK 在收到 runtime 参数后初始化。
-6. Singular provider 使用 runtime key/secret 初始化。
-7. 初始化前缓存的事件开始补发。
+4. iOS 检查 ATT 状态；如果是 `notDetermined`，先请求系统 ATT 权限。
+5. Facebook provider 调用 `FacebookAppEvents.configure(appId, clientToken)`。
+6. Facebook native SDK 在收到 runtime 参数后初始化。
+7. Singular provider 使用 runtime key/secret 初始化。
+8. 初始化前缓存的事件开始补发。
 
 远程请求默认最多尝试 3 次：
 
@@ -201,7 +203,7 @@ await loader.clearCache(remoteConfig);
 
 仍需保留 SDK 正常运行需要的平台能力配置，例如：
 
-- iOS ATT 权限说明和授权流程
+- iOS `NSUserTrackingUsageDescription` 权限说明；ATT 请求流程由本包在 SDK 初始化前执行
 - iOS/Android deep link 或 URL scheme 能力，如果业务场景需要
 - Android install referrer
 - Android Proguard / R8 保留规则
