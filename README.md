@@ -9,7 +9,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.0.5
+      ref: v0.0.6
 ```
 
 ### 方式 B：本地 path 依赖
@@ -30,6 +30,15 @@ flutter pub get
 
 - 团队协作优先使用 `ref`（tag 或 commit）锁版本，确保所有人行为一致。
 - 插件升级时，先更新 `ref`，再执行 `flutter pub get`。
+
+## 版本要求
+
+- Dart: `>=3.8.1 <4.0.0`
+- Flutter: `>=3.38.0`
+- Facebook App Events Flutter SDK: 仓库内置版本 `0.30.2`
+- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.1`
+  - Android Singular SDK: `12.14.0`
+  - iOS Singular SDK: `12.12.0`
 
 ## 2. 配置 YAML
 

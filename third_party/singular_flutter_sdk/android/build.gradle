@@ -1,0 +1,33 @@
+group 'com.singular.sdk.flutter_sdk'
+version '1.0'
+
+buildscript {
+    repositories {
+        google()
+        jcenter()
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        jcenter()
+        maven { url 'https://maven.singular.net/' }
+    }
+}
+
+apply plugin: 'com.android.library'
+
+android {
+    compileSdkVersion 31
+
+    defaultConfig {
+        minSdkVersion 16
+    }
+
+    namespace 'com.singular.flutter_sdk'
+}
+
+dependencies {
+    implementation 'com.singular.sdk:singular_sdk:12.14.0'
+}

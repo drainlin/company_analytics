@@ -26,8 +26,8 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
     }
 
     if (advertiserTrackingEnabled != null) {
-      await _appEvents.setAdvertiserTracking(
-        enabled: advertiserTrackingEnabled!,
+      await _appEvents.setAdvertiserIdCollectionEnabled(
+        advertiserTrackingEnabled!,
       );
     }
   }

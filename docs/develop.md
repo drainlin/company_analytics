@@ -10,7 +10,11 @@
 ## 环境要求
 
 - Dart: `>=3.8.1 <4.0.0`
-- Flutter: 以你业务工程版本为准（建议稳定版）
+- Flutter: `>=3.38.0`
+- Facebook App Events Flutter SDK: 仓库内置版本 `0.30.2`
+- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.1`
+  - Android Singular SDK: `12.14.0`
+  - iOS Singular SDK: `12.12.0`
 
 ## 提供能力
 
