@@ -23,7 +23,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.1.0
+      ref: v0.1.1
 ```
 
 本地开发依赖：

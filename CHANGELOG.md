@@ -1,3 +1,8 @@
+## 0.1.1
+
+* Print Facebook app id and client token after test-mode initialization.
+* Flush Facebook events immediately when test mode is enabled.
+
 ## 0.1.0
 
 * Add a runtime Facebook test mode flag for `initFromRemoteConfig()`.

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:facebook_app_events/facebook_app_events.dart';
 
 import '../analytics_event.dart';
@@ -56,21 +57,31 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
         advertiserTrackingEnabled!,
       );
     }
+
+    if (testModeEnabled) {
+      debugPrint(
+        'Facebook test mode initialized. appId=$resolvedAppId clientToken=$resolvedClientToken',
+      );
+    }
   }
 
   @override
-  Future<void> track(AnalyticsEvent event) {
+  Future<void> track(AnalyticsEvent event) async {
     final parameters = <String, dynamic>{...event.parameters};
     if (event.hasRevenue &&
         !parameters.containsKey(FacebookAppEvents.paramNameCurrency)) {
       parameters[FacebookAppEvents.paramNameCurrency] = event.revenueCurrency!;
     }
 
-    return _appEvents.logEvent(
+    await _appEvents.logEvent(
       name: event.name,
       parameters: parameters,
       valueToSum: event.valueToSum,
     );
+
+    if (testModeEnabled) {
+      await _appEvents.flush();
+    }
   }
 
   @override

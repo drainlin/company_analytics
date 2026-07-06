@@ -444,6 +444,19 @@ void main() {
       expect(appEvents.debugLoggingEnabled, isTrue);
     });
 
+    test('flushes Facebook events immediately in test mode', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final provider = FacebookAnalyticsProvider(
+        appEvents: appEvents,
+        testModeEnabled: true,
+      );
+
+      await provider.track(const AnalyticsEvent(name: 'test_event'));
+
+      expect(appEvents.lastName, 'test_event');
+      expect(appEvents.flushCount, 1);
+    });
+
     test('adds Facebook currency parameter for revenue events', () async {
       final appEvents = _RecordingFacebookAppEvents();
       final provider = FacebookAnalyticsProvider(appEvents: appEvents);
@@ -757,6 +770,7 @@ class _RecordingFacebookAppEvents extends FacebookAppEvents {
   String? configuredAppId;
   String? configuredClientToken;
   bool? debugLoggingEnabled;
+  int flushCount = 0;
   String? lastName;
   Map<String, dynamic>? lastParameters;
   double? lastValueToSum;
@@ -773,6 +787,11 @@ class _RecordingFacebookAppEvents extends FacebookAppEvents {
   @override
   Future<void> setDebugLoggingEnabled(bool enabled) async {
     debugLoggingEnabled = enabled;
+  }
+
+  @override
+  Future<void> flush() async {
+    flushCount += 1;
   }
 
   @override
