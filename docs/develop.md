@@ -260,7 +260,7 @@ await analytics.clearUser();
 
 ## 初始化前事件策略
 
-默认策略：`track()` 在 `init()` 前被调用时，事件会先缓存，初始化成功后补发。
+默认策略：`track()` 在 `initFromRemoteConfig()` 完成前被调用时，事件会先缓存，初始化成功后补发。
 
 严格模式：
 
@@ -297,7 +297,6 @@ final analytics = CompanyAnalytics(failFastBeforeInit: true);
 `package:company_analytics/company_analytics.dart` 导出：
 
 - `CompanyAnalytics`
-- `AnalyticsConfig`
 - `AnalyticsEvent`
 - `AnalyticsProvider`
 - `RemoteAnalyticsConfig`
@@ -311,20 +310,9 @@ final analytics = CompanyAnalytics(failFastBeforeInit: true);
 
 `AnalyticsSdkSingletons.facebookAppEvents` 和 `AnalyticsSdkSingletons.singular` 仍保留，但已标记 `@Deprecated`。业务代码应优先走 `CompanyAnalytics`。
 
-## Legacy 脚本
+## 旧接入方式
 
-旧 YAML / 原生预填脚本已移动到 `tool/legacy/`，只用于历史项目迁移或排查旧接入方式。新接入不需要执行这些命令。
-
-CLI 仍保留兼容入口：
-
-```bash
-dart run company_analytics:company_analytics setup --app-root .
-dart run company_analytics:company_analytics sync --app-root .
-dart run company_analytics:company_analytics apply .
-dart run company_analytics:company_analytics check .
-```
-
-这些命令会操作旧的 YAML/native 预填流程，不属于当前推荐接入路径。
+旧 YAML / 原生预填脚本和手动 `init(AnalyticsConfig)` 入口已移除。当前只保留远程 JSON 初始化路径。
 
 ## 开发校验
 

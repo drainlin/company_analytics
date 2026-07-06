@@ -1,6 +1,6 @@
 name: company_analytics
 description: "Internal Flutter analytics facade for Facebook App Events and Singular."
-version: 0.0.7
+version: 0.0.8
 publish_to: none
 
 environment:
@@ -17,14 +17,10 @@ dependencies:
   singular_flutter_sdk:
     path: third_party/singular_flutter_sdk
   shared_preferences: ^2.5.5
-  yaml: any
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
-
-executables:
-  company_analytics: company_analytics
 
 flutter:

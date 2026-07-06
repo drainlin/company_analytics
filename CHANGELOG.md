@@ -1,3 +1,9 @@
+## 0.0.8
+
+* Remove the legacy manual `init(AnalyticsConfig)` public entrypoint.
+* Remove the legacy YAML/native setup CLI and scripts.
+* Keep remote JSON initialization as the only supported integration path.
+
 ## 0.0.7
 
 * Add App Tracking Transparency support before Facebook and Singular native SDK initialization.

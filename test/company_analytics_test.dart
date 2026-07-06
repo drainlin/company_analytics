@@ -10,19 +10,22 @@ void main() {
   group('CompanyAnalytics', () {
     test('queues events before init and flushes after init', () async {
       final provider = InMemoryAnalyticsProvider();
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.iOS,
+      );
       final analytics = CompanyAnalytics(
         providers: <InMemoryAnalyticsProvider>[provider],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
       );
 
       await analytics.track(const AnalyticsEvent(name: 'app_open'));
 
-      await analytics.init(
-        const AnalyticsConfig(
-          singularApiKey: 'fake_key',
-          singularSecret: 'fake_secret',
-          enableFacebook: false,
-          enableSingular: false,
-        ),
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: loader,
       );
 
       expect(provider.trackedEvents.length, 1);
@@ -38,33 +41,35 @@ void main() {
       );
     });
 
-    test('validates config', () {
+    test('validates remote singular config before native initialization', () {
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: _FakeConfigHttpClient(_invalidSingularRemoteJson),
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.iOS,
+      );
       final analytics = CompanyAnalytics();
 
       expect(
-        () => analytics.init(
-          const AnalyticsConfig(
-            singularApiKey: '',
-            singularSecret: '',
-            enableFacebook: false,
-            enableSingular: true,
-          ),
+        () => analytics.initFromRemoteConfig(
+          RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+          loader: loader,
         ),
         throwsA(isA<AnalyticsInitializationException>()),
       );
     });
 
     test('validates facebook runtime config before native initialization', () {
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: _FakeConfigHttpClient(_invalidFacebookRemoteJson),
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.iOS,
+      );
       final analytics = CompanyAnalytics();
 
       expect(
-        () => analytics.init(
-          const AnalyticsConfig(
-            singularApiKey: 'fake_key',
-            singularSecret: 'fake_secret',
-            enableFacebook: true,
-            enableSingular: false,
-          ),
+        () => analytics.initFromRemoteConfig(
+          RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+          loader: loader,
         ),
         throwsA(isA<AnalyticsInitializationException>()),
       );
@@ -482,6 +487,62 @@ const String _defaultRemoteJson = '''
     },
     "enable_logging": true,
     "wait_for_tracking_auth_seconds": 15
+  }
+}
+''';
+
+const String _invalidSingularRemoteJson = '''
+{
+  "version": 1,
+  "enable_facebook": false,
+  "enable_singular": true,
+  "facebook": {
+    "ios": {
+      "app_id": "",
+      "client_token": ""
+    },
+    "android": {
+      "app_id": "",
+      "client_token": ""
+    }
+  },
+  "singular": {
+    "ios": {
+      "api_key": "",
+      "secret": ""
+    },
+    "android": {
+      "api_key": "",
+      "secret": ""
+    }
+  }
+}
+''';
+
+const String _invalidFacebookRemoteJson = '''
+{
+  "version": 1,
+  "enable_facebook": true,
+  "enable_singular": false,
+  "facebook": {
+    "ios": {
+      "app_id": "fb_app_ios",
+      "client_token": ""
+    },
+    "android": {
+      "app_id": "fb_app_android",
+      "client_token": ""
+    }
+  },
+  "singular": {
+    "ios": {
+      "api_key": "",
+      "secret": ""
+    },
+    "android": {
+      "api_key": "",
+      "secret": ""
+    }
   }
 }
 ''';

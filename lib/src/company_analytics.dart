@@ -41,7 +41,7 @@ class CompanyAnalytics {
     return _lastRemoteConfigResult;
   }
 
-  Future<void> init(AnalyticsConfig config) async {
+  Future<void> _initFromConfig(AnalyticsConfig config) async {
     if (_isInitialized || _isInitializing) {
       return;
     }
@@ -105,7 +105,7 @@ class CompanyAnalytics {
   ) async {
     final result = await configLoader.loadResult(remoteConfig);
     _lastRemoteConfigResult = result;
-    await init(result.config);
+    await _initFromConfig(result.config);
   }
 
   Future<void> track(AnalyticsEvent event) async {

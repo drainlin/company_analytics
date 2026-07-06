@@ -23,7 +23,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.0.7
+      ref: v0.0.8
 ```
 
 本地开发依赖：
@@ -223,15 +223,6 @@ iOS `Info.plist` 示例：
 <string>This identifier will be used to deliver personalized ads and attribution analytics.</string>
 ```
 
-## Legacy 工具
+## 旧接入方式
 
-旧的 YAML / 原生预填脚本已移动到 `tool/legacy/`，只用于历史项目迁移或排查旧接入方式：
-
-```bash
-dart run company_analytics:company_analytics setup --app-root .
-dart run company_analytics:company_analytics sync --app-root .
-dart run company_analytics:company_analytics apply .
-dart run company_analytics:company_analytics check .
-```
-
-新接入不需要运行这些命令。
+旧的 YAML / 原生预填脚本和手动 `init(AnalyticsConfig)` 入口已移除。新接入统一使用远程 JSON 和 `initFromRemoteConfig()`。
