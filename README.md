@@ -189,6 +189,20 @@ await analytics.track(
 );
 ```
 
+收入事件由 `valueToSum` 和 `revenueCurrency` 一起决定。插件会自动把
+`revenueCurrency` 转成 Facebook 需要的 `fb_currency` 参数，并在 Singular
+侧调用 revenue API；业务代码不需要直接操作第三方 SDK 的货币字段。
+
+常用事件建议：
+
+- 启动/活跃：`app_open`、`session_start`
+- 注册/登录：`sign_up`、`login`
+- 内容行为：`view_content`、`search`、`share`、`invite`
+- 电商/订阅：`add_to_cart`、`add_to_wishlist`、`begin_checkout`、`add_payment_info`、`purchase_success`、`start_trial`、`subscribe`
+- 广告变现：`ad_impression`、`ad_click`
+- 游戏/成长：`tutorial_complete`、`level_achieved`、`unlock_achievement`、`spend_virtual_currency`
+- 账号资料：`profile_update`、`rate`
+
 用户标识：
 
 ```dart

@@ -3,8 +3,11 @@ import 'dart:convert';
 
 import 'package:company_analytics/company_analytics.dart';
 import 'package:company_analytics/src/providers/facebook_provider.dart';
+import 'package:company_analytics/src/providers/singular_provider.dart';
+import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:singular_flutter_sdk/singular_config.dart';
 
 void main() {
   group('CompanyAnalytics', () {
@@ -424,6 +427,104 @@ void main() {
 
       expect(provider.initialize(), throwsA(isA<StateError>()));
     });
+
+    test('adds Facebook currency parameter for revenue events', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final provider = FacebookAnalyticsProvider(appEvents: appEvents);
+
+      await provider.track(
+        const AnalyticsEvent(
+          name: 'purchase_success',
+          parameters: {'product_id': 'sub_monthly'},
+          valueToSum: 9.99,
+          revenueCurrency: 'USD',
+        ),
+      );
+
+      expect(appEvents.lastName, 'purchase_success');
+      expect(appEvents.lastValueToSum, 9.99);
+      expect(appEvents.lastParameters, <String, dynamic>{
+        'product_id': 'sub_monthly',
+        FacebookAppEvents.paramNameCurrency: 'USD',
+      });
+    });
+  });
+
+  group('SingularAnalyticsProvider', () {
+    test('sends revenue without parameters as Singular revenue', () async {
+      final singular = _RecordingSingularSdkFacade();
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: singular,
+      );
+
+      await provider.track(
+        const AnalyticsEvent(
+          name: 'purchase_success',
+          valueToSum: 9.99,
+          revenueCurrency: 'USD',
+        ),
+      );
+
+      expect(singular.calls, <String>['customRevenue']);
+      expect(singular.lastEventName, 'purchase_success');
+      expect(singular.lastCurrency, 'USD');
+      expect(singular.lastAmount, 9.99);
+    });
+
+    test(
+      'sends revenue with parameters as Singular revenue attributes',
+      () async {
+        final singular = _RecordingSingularSdkFacade();
+        final provider = SingularAnalyticsProvider(
+          apiKey: 'key',
+          secret: 'secret',
+          enableLogging: false,
+          waitForTrackingAuthSeconds: 0,
+          singular: singular,
+        );
+
+        await provider.track(
+          const AnalyticsEvent(
+            name: 'purchase_success',
+            parameters: {'product_id': 'sub_monthly'},
+            valueToSum: 9.99,
+            revenueCurrency: 'USD',
+          ),
+        );
+
+        expect(singular.calls, <String>['customRevenueWithAttributes']);
+        expect(singular.lastEventName, 'purchase_success');
+        expect(singular.lastCurrency, 'USD');
+        expect(singular.lastAmount, 9.99);
+        expect(singular.lastArgs, <String, dynamic>{
+          'product_id': 'sub_monthly',
+        });
+      },
+    );
+
+    test('sends ordinary events through non-revenue Singular APIs', () async {
+      final singular = _RecordingSingularSdkFacade();
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: singular,
+      );
+
+      await provider.track(const AnalyticsEvent(name: 'app_open'));
+      await provider.track(
+        const AnalyticsEvent(name: 'view_home', parameters: {'source': 'tab'}),
+      );
+
+      expect(singular.calls, <String>['event', 'eventWithArgs']);
+      expect(singular.lastEventName, 'view_home');
+      expect(singular.lastArgs, <String, dynamic>{'source': 'tab'});
+    });
   });
 }
 
@@ -634,4 +735,75 @@ class _OrderingAnalyticsProvider extends InMemoryAnalyticsProvider {
   Future<void> initialize() async {
     order.add('provider');
   }
+}
+
+class _RecordingFacebookAppEvents extends FacebookAppEvents {
+  String? lastName;
+  Map<String, dynamic>? lastParameters;
+  double? lastValueToSum;
+
+  @override
+  Future<void> logEvent({
+    required String name,
+    Map<String, dynamic>? parameters,
+    double? valueToSum,
+  }) async {
+    lastName = name;
+    lastParameters = parameters;
+    lastValueToSum = valueToSum;
+  }
+}
+
+class _RecordingSingularSdkFacade implements SingularSdkFacade {
+  final List<String> calls = <String>[];
+  String? lastEventName;
+  String? lastCurrency;
+  double? lastAmount;
+  Map? lastArgs;
+
+  @override
+  void start(SingularConfig config) {
+    calls.add('start');
+  }
+
+  @override
+  void event(String eventName) {
+    calls.add('event');
+    lastEventName = eventName;
+  }
+
+  @override
+  void eventWithArgs(String eventName, Map args) {
+    calls.add('eventWithArgs');
+    lastEventName = eventName;
+    lastArgs = args;
+  }
+
+  @override
+  void customRevenue(String eventName, String currency, double amount) {
+    calls.add('customRevenue');
+    lastEventName = eventName;
+    lastCurrency = currency;
+    lastAmount = amount;
+  }
+
+  @override
+  void customRevenueWithAttributes(
+    String eventName,
+    String currency,
+    double amount,
+    Map attributes,
+  ) {
+    calls.add('customRevenueWithAttributes');
+    lastEventName = eventName;
+    lastCurrency = currency;
+    lastAmount = amount;
+    lastArgs = attributes;
+  }
+
+  @override
+  void setCustomUserId(String customUserId) {}
+
+  @override
+  void unsetCustomUserId() {}
 }

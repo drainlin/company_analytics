@@ -54,9 +54,15 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
 
   @override
   Future<void> track(AnalyticsEvent event) {
+    final parameters = <String, dynamic>{...event.parameters};
+    if (event.hasRevenue &&
+        !parameters.containsKey(FacebookAppEvents.paramNameCurrency)) {
+      parameters[FacebookAppEvents.paramNameCurrency] = event.revenueCurrency!;
+    }
+
     return _appEvents.logEvent(
       name: event.name,
-      parameters: event.parameters,
+      parameters: parameters,
       valueToSum: event.valueToSum,
     );
   }

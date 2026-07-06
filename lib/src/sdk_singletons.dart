@@ -39,6 +39,10 @@ class SingularSdkFacade {
   void eventWithArgs(String eventName, Map args) =>
       Singular.eventWithArgs(eventName, args);
 
+  void customRevenue(String eventName, String currency, double amount) {
+    Singular.customRevenue(eventName, currency, amount);
+  }
+
   void customRevenueWithAttributes(
     String eventName,
     String currency,

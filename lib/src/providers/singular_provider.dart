@@ -34,18 +34,27 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
 
   @override
   Future<void> track(AnalyticsEvent event) async {
-    if (event.parameters.isEmpty) {
-      _singular.event(event.name);
-      return;
-    }
-
     if (event.hasRevenue) {
+      if (event.parameters.isEmpty) {
+        _singular.customRevenue(
+          event.name,
+          event.revenueCurrency!,
+          event.valueToSum!,
+        );
+        return;
+      }
+
       _singular.customRevenueWithAttributes(
         event.name,
         event.revenueCurrency!,
         event.valueToSum!,
         event.parameters,
       );
+      return;
+    }
+
+    if (event.parameters.isEmpty) {
+      _singular.event(event.name);
       return;
     }
 
