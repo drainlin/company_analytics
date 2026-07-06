@@ -237,6 +237,14 @@ void main() {
   });
 
   group('RemoteAnalyticsConfigLoader', () {
+    test('uses a 15 second default timeout', () {
+      final remoteConfig = RemoteAnalyticsConfig(
+        url: Uri.parse('http://127.0.0.1/config.json'),
+      );
+
+      expect(remoteConfig.timeout, const Duration(seconds: 15));
+    });
+
     test('parses unified remote config json', () {
       final loader = RemoteAnalyticsConfigLoader(
         httpClient: _FakeConfigHttpClient(_remoteJson),

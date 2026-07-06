@@ -23,7 +23,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.1.1
+      ref: v0.1.2
 ```
 
 本地开发依赖：
@@ -114,7 +114,7 @@ JSON 使用同一个文件，并在文件内区分 iOS 和 Android：
 
 每次启动会先请求远程 URL；成功解析后写入本地缓存。网络失败时会使用上一次成功解析的缓存。缓存 metadata 包含 `version`、`sha256`、`source_url`、`cached_at`。
 
-远程请求默认最多尝试 3 次，每次请求默认超时 3 秒，重试间隔从 500ms 开始退避。如果所有远程请求都失败，再按 `useCachedConfigOnFailure` 决定是否使用缓存。
+远程请求默认最多尝试 3 次，每次请求默认超时 15 秒，重试间隔从 500ms 开始退避。如果所有远程请求都失败，再按 `useCachedConfigOnFailure` 决定是否使用缓存。
 
 ## 初始化
 
@@ -132,7 +132,7 @@ Future<void> initAnalytics() async {
       url: Uri.parse(
         'https://config.example.com/event_manager/analytics.remote.json',
       ),
-      timeout: const Duration(seconds: 3),
+      timeout: const Duration(seconds: 15),
       maxAttempts: 3,
       retryDelay: const Duration(milliseconds: 500),
       useCachedConfigOnFailure: true,

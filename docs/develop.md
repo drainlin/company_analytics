@@ -123,7 +123,7 @@ Future<void> initAnalytics() async {
       url: Uri.parse(
         'https://config.example.com/event_manager/analytics.remote.json',
       ),
-      timeout: const Duration(seconds: 3),
+      timeout: const Duration(seconds: 15),
       useCachedConfigOnFailure: true,
     ),
     facebookTestModeEnabled: kDebugMode,
@@ -151,7 +151,7 @@ RemoteAnalyticsConfig(
   url: Uri.parse(
     'https://config.example.com/event_manager/analytics.remote.json',
   ),
-  timeout: const Duration(seconds: 3),
+  timeout: const Duration(seconds: 15),
   maxAttempts: 3,
   retryDelay: const Duration(milliseconds: 500),
   retryBackoffMultiplier: 2,

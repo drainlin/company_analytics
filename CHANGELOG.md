@@ -1,3 +1,8 @@
+## 0.1.2
+
+* Increase the default remote config timeout to 15 seconds.
+* Print remote config request failures and cache fallback status.
+
 ## 0.1.1
 
 * Print Facebook app id and client token after test-mode initialization.

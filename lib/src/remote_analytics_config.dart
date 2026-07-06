@@ -12,7 +12,7 @@ import 'analytics_exception.dart';
 class RemoteAnalyticsConfig {
   const RemoteAnalyticsConfig({
     required this.url,
-    this.timeout = const Duration(seconds: 3),
+    this.timeout = const Duration(seconds: 15),
     this.cacheKey = _defaultCacheKey,
     this.useCachedConfigOnFailure = true,
     this.maxAttempts = 3,
@@ -41,12 +41,32 @@ class HttpClientAnalyticsConfigHttpClient implements AnalyticsConfigHttpClient {
   Future<String> get(Uri url, Duration timeout) async {
     final client = HttpClient();
     try {
-      final request = await client.getUrl(url).timeout(timeout);
-      final response = await request.close().timeout(timeout);
+      final request = await client
+          .getUrl(url)
+          .timeout(
+            timeout,
+            onTimeout: () => throw TimeoutException(
+              'Timed out opening remote analytics config URL $url.',
+              timeout,
+            ),
+          );
+      final response = await request.close().timeout(
+        timeout,
+        onTimeout: () => throw TimeoutException(
+          'Timed out waiting for remote analytics config response from $url.',
+          timeout,
+        ),
+      );
       final body = await response
           .transform(utf8.decoder)
           .join()
-          .timeout(timeout);
+          .timeout(
+            timeout,
+            onTimeout: () => throw TimeoutException(
+              'Timed out reading remote analytics config body from $url.',
+              timeout,
+            ),
+          );
 
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw HttpException(
@@ -190,6 +210,11 @@ class RemoteAnalyticsConfigLoader {
         return await _loadRemoteResult(remoteConfig);
       } catch (error) {
         remoteError = error;
+        _printRemoteConfigFailure(
+          remoteConfig: remoteConfig,
+          attempt: attempt,
+          error: error,
+        );
         if (attempt < remoteConfig.maxAttempts) {
           await Future<void>.delayed(_retryDelay(remoteConfig, attempt));
         }
@@ -205,6 +230,7 @@ class RemoteAnalyticsConfigLoader {
 
     final cachedJson = await _cache.read(remoteConfig.cacheKey);
     if (cachedJson == null) {
+      _printRemoteConfigCacheMiss(remoteConfig);
       throw AnalyticsInitializationException(
         'Failed to load remote analytics config and no cached config exists.',
         remoteError,
@@ -212,6 +238,7 @@ class RemoteAnalyticsConfigLoader {
     }
 
     try {
+      _printRemoteConfigUsingCache(remoteConfig);
       return RemoteAnalyticsConfigResult(
         config: parse(cachedJson),
         source: RemoteAnalyticsConfigSource.cache,
@@ -223,6 +250,37 @@ class RemoteAnalyticsConfigLoader {
         cacheError,
       );
     }
+  }
+
+  static void _printRemoteConfigFailure({
+    required RemoteAnalyticsConfig remoteConfig,
+    required int attempt,
+    required Object error,
+  }) {
+    // ignore: avoid_print
+    print(
+      '[company_analytics] Remote config request failed. '
+      'attempt=$attempt/${remoteConfig.maxAttempts} '
+      'url=${remoteConfig.url} '
+      'timeout=${remoteConfig.timeout.inSeconds}s '
+      'error=$error',
+    );
+  }
+
+  static void _printRemoteConfigCacheMiss(RemoteAnalyticsConfig remoteConfig) {
+    // ignore: avoid_print
+    print(
+      '[company_analytics] Remote config cache miss. '
+      'cacheKey=${remoteConfig.cacheKey}',
+    );
+  }
+
+  static void _printRemoteConfigUsingCache(RemoteAnalyticsConfig remoteConfig) {
+    // ignore: avoid_print
+    print(
+      '[company_analytics] Using cached remote config. '
+      'cacheKey=${remoteConfig.cacheKey}',
+    );
   }
 
   Future<RemoteAnalyticsConfigResult> _loadRemoteResult(
