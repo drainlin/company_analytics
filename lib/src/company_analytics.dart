@@ -32,6 +32,7 @@ class CompanyAnalytics {
   RemoteAnalyticsConfigResult? _lastRemoteConfigResult;
   RemoteAnalyticsConfig? _lastRemoteConfig;
   RemoteAnalyticsConfigLoader? _lastRemoteConfigLoader;
+  bool _lastFacebookTestModeEnabled = false;
   Future<void>? _remoteInitAttempt;
   List<AnalyticsProvider> _providers = const <AnalyticsProvider>[];
 
@@ -41,7 +42,10 @@ class CompanyAnalytics {
     return _lastRemoteConfigResult;
   }
 
-  Future<void> _initFromConfig(AnalyticsConfig config) async {
+  Future<void> _initFromConfig(
+    AnalyticsConfig config, {
+    bool facebookTestModeEnabled = false,
+  }) async {
     if (_isInitialized || _isInitializing) {
       return;
     }
@@ -58,7 +62,12 @@ class CompanyAnalytics {
 
     try {
       await _trackingAuthorizationRequester.requestIfNeeded();
-      _providers = _customProviders ?? _buildDefaultProviders(config);
+      _providers =
+          _customProviders ??
+          _buildDefaultProviders(
+            config,
+            facebookTestModeEnabled: facebookTestModeEnabled,
+          );
 
       for (final provider in _providers) {
         await provider.initialize();
@@ -84,11 +93,17 @@ class CompanyAnalytics {
   Future<void> initFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig, {
     RemoteAnalyticsConfigLoader? loader,
+    bool facebookTestModeEnabled = false,
   }) async {
     final configLoader = loader ?? RemoteAnalyticsConfigLoader();
     _lastRemoteConfig = remoteConfig;
     _lastRemoteConfigLoader = configLoader;
-    final attempt = _loadAndInitFromRemoteConfig(remoteConfig, configLoader);
+    _lastFacebookTestModeEnabled = facebookTestModeEnabled;
+    final attempt = _loadAndInitFromRemoteConfig(
+      remoteConfig,
+      configLoader,
+      facebookTestModeEnabled: facebookTestModeEnabled,
+    );
     _remoteInitAttempt = attempt;
     try {
       await attempt;
@@ -101,11 +116,15 @@ class CompanyAnalytics {
 
   Future<void> _loadAndInitFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig,
-    RemoteAnalyticsConfigLoader configLoader,
-  ) async {
+    RemoteAnalyticsConfigLoader configLoader, {
+    bool facebookTestModeEnabled = false,
+  }) async {
     final result = await configLoader.loadResult(remoteConfig);
     _lastRemoteConfigResult = result;
-    await _initFromConfig(result.config);
+    await _initFromConfig(
+      result.config,
+      facebookTestModeEnabled: facebookTestModeEnabled,
+    );
   }
 
   Future<void> track(AnalyticsEvent event) async {
@@ -155,6 +174,7 @@ class CompanyAnalytics {
       await initFromRemoteConfig(
         _lastRemoteConfig!,
         loader: _lastRemoteConfigLoader,
+        facebookTestModeEnabled: _lastFacebookTestModeEnabled,
       );
     } catch (_) {
       // The caller falls back to queueing or fail-fast behavior.
@@ -205,8 +225,9 @@ class CompanyAnalytics {
   }
 
   static List<AnalyticsProvider> _buildDefaultProviders(
-    AnalyticsConfig config,
-  ) {
+    AnalyticsConfig config, {
+    bool facebookTestModeEnabled = false,
+  }) {
     final providers = <AnalyticsProvider>[];
 
     if (config.enableFacebook) {
@@ -216,6 +237,7 @@ class CompanyAnalytics {
           clientToken: config.facebookClientToken,
           autoLogAppEventsEnabled: config.facebookAutoLogAppEventsEnabled,
           advertiserTrackingEnabled: config.facebookAdvertiserTrackingEnabled,
+          testModeEnabled: facebookTestModeEnabled,
         ),
       );
     }

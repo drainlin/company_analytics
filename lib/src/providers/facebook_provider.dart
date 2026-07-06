@@ -11,6 +11,7 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
     this.clientToken,
     this.autoLogAppEventsEnabled,
     this.advertiserTrackingEnabled,
+    this.testModeEnabled = false,
   }) : _appEvents =
            appEvents ?? AnalyticsSdkSingletons.facebookAppEventsInternal;
 
@@ -19,6 +20,7 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
   final String? clientToken;
   final bool? autoLogAppEventsEnabled;
   final bool? advertiserTrackingEnabled;
+  final bool testModeEnabled;
 
   @override
   String get name => 'facebook_app_events';
@@ -40,6 +42,10 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
       appId: resolvedAppId,
       clientToken: resolvedClientToken,
     );
+
+    if (testModeEnabled) {
+      await _appEvents.setDebugLoggingEnabled(true);
+    }
 
     if (autoLogAppEventsEnabled != null) {
       await _appEvents.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled!);

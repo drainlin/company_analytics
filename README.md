@@ -23,7 +23,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.0.8
+      ref: v0.1.0
 ```
 
 本地开发依赖：
@@ -122,6 +122,7 @@ JSON 使用同一个文件，并在文件内区分 iOS 和 Android：
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
+import 'package:flutter/foundation.dart';
 
 final CompanyAnalytics analytics = CompanyAnalytics();
 
@@ -136,9 +137,12 @@ Future<void> initAnalytics() async {
       retryDelay: const Duration(milliseconds: 500),
       useCachedConfigOnFailure: true,
     ),
+    facebookTestModeEnabled: kDebugMode,
   );
 }
 ```
+
+`facebookTestModeEnabled` 是本地运行时参数，不属于远程 JSON。调试时可设为 `true`，用于打开 Facebook SDK 的测试/调试日志；生产环境保持默认 `false`。
 
 如果启动时因为网络或无缓存导致 `initFromRemoteConfig()` 初始化失败，`CompanyAnalytics` 会记住这次远程配置参数。后续第一次 `track()` 发现还没初始化时，会先立即重试远程初始化；重试成功后再上报当前事件，重试失败则继续按原策略排队或 fail-fast。
 

@@ -113,6 +113,7 @@ curl -fsS http://127.0.0.1:8765/analytics.remote.dev.json
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
+import 'package:flutter/foundation.dart';
 
 final analytics = CompanyAnalytics();
 
@@ -125,9 +126,12 @@ Future<void> initAnalytics() async {
       timeout: const Duration(seconds: 3),
       useCachedConfigOnFailure: true,
     ),
+    facebookTestModeEnabled: kDebugMode,
   );
 }
 ```
+
+`facebookTestModeEnabled` 是调试用的本地运行时参数，不写入远程配置。传 `true` 时会在 Facebook SDK 初始化后打开测试/调试日志；不传时默认关闭。
 
 初始化顺序：
 

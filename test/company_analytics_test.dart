@@ -428,6 +428,22 @@ void main() {
       expect(provider.initialize(), throwsA(isA<StateError>()));
     });
 
+    test('enables Facebook test mode during initialization', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final provider = FacebookAnalyticsProvider(
+        appEvents: appEvents,
+        appId: 'fb_app',
+        clientToken: 'fb_token',
+        testModeEnabled: true,
+      );
+
+      await provider.initialize();
+
+      expect(appEvents.configuredAppId, 'fb_app');
+      expect(appEvents.configuredClientToken, 'fb_token');
+      expect(appEvents.debugLoggingEnabled, isTrue);
+    });
+
     test('adds Facebook currency parameter for revenue events', () async {
       final appEvents = _RecordingFacebookAppEvents();
       final provider = FacebookAnalyticsProvider(appEvents: appEvents);
@@ -738,9 +754,26 @@ class _OrderingAnalyticsProvider extends InMemoryAnalyticsProvider {
 }
 
 class _RecordingFacebookAppEvents extends FacebookAppEvents {
+  String? configuredAppId;
+  String? configuredClientToken;
+  bool? debugLoggingEnabled;
   String? lastName;
   Map<String, dynamic>? lastParameters;
   double? lastValueToSum;
+
+  @override
+  Future<void> configure({
+    required String appId,
+    required String clientToken,
+  }) async {
+    configuredAppId = appId;
+    configuredClientToken = clientToken;
+  }
+
+  @override
+  Future<void> setDebugLoggingEnabled(bool enabled) async {
+    debugLoggingEnabled = enabled;
+  }
 
   @override
   Future<void> logEvent({

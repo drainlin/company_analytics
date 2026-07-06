@@ -1,3 +1,8 @@
+## 0.1.0
+
+* Add a runtime Facebook test mode flag for `initFromRemoteConfig()`.
+* Improve revenue event tracking behavior.
+
 ## 0.0.8
 
 * Remove the legacy manual `init(AnalyticsConfig)` public entrypoint.
