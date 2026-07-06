@@ -1,3 +1,11 @@
+## 0.0.7
+
+* Add App Tracking Transparency support before Facebook and Singular native SDK initialization.
+* Request ATT on iOS when the status is `notDetermined`.
+* Document the required `NSUserTrackingUsageDescription` Info.plist entry.
+* Export provider and tracking authorization extension points from the package entrypoint.
+* Treat generated placeholder remote-config values as disabled Facebook or Singular providers.
+
 ## 0.0.6
 
 * Raise minimum Flutter SDK to 3.38.0.

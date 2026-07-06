@@ -23,7 +23,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.0.6
+      ref: v0.0.7
 ```
 
 本地开发依赖：
@@ -109,6 +109,8 @@ JSON 使用同一个文件，并在文件内区分 iOS 和 Android：
   }
 }
 ```
+
+模板里的 `YOUR_...` 占位值会被视为“未配置”。如果当前平台的 Facebook 或 Singular 必填值仍是这些默认占位值，即使对应的 `enable_*` 为 `true`，SDK 也会把该 provider 当作未开启处理，不会启动对应原生 SDK。
 
 每次启动会先请求远程 URL；成功解析后写入本地缓存。网络失败时会使用上一次成功解析的缓存。缓存 metadata 包含 `version`、`sha256`、`source_url`、`cached_at`。
 

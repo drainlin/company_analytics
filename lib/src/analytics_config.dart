@@ -34,10 +34,6 @@ class AnalyticsConfig {
   List<String> validate({bool hasCustomProviders = false}) {
     final errors = <String>[];
 
-    if (!hasCustomProviders && !enableFacebook && !enableSingular) {
-      errors.add('At least one analytics provider must be enabled.');
-    }
-
     final shouldValidateDefaultProviders = !hasCustomProviders;
 
     if (shouldValidateDefaultProviders &&

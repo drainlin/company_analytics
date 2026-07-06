@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:company_analytics/company_analytics.dart';
 import 'package:company_analytics/src/providers/facebook_provider.dart';
-import 'package:company_analytics/src/tracking_authorization.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -93,6 +92,38 @@ void main() {
         RemoteAnalyticsConfigSource.remote,
       );
     });
+
+    test(
+      'initFromRemoteConfig treats default placeholder json as no-op',
+      () async {
+        final requester = _RecordingTrackingAuthorizationRequester(<String>[]);
+        final loader = RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        );
+        final analytics = CompanyAnalytics(
+          trackingAuthorizationRequester: requester,
+        );
+
+        await analytics.initFromRemoteConfig(
+          RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+          loader: loader,
+        );
+        await analytics.track(const AnalyticsEvent(name: 'app_open'));
+
+        expect(analytics.isInitialized, isTrue);
+        expect(requester.requestCount, 1);
+        expect(
+          analytics.lastRemoteConfigResult?.config.enableFacebook,
+          isFalse,
+        );
+        expect(
+          analytics.lastRemoteConfigResult?.config.enableSingular,
+          isFalse,
+        );
+      },
+    );
 
     test('requests ATT after config load and before provider init', () async {
       final order = <String>[];
@@ -217,6 +248,24 @@ void main() {
       expect(config.facebookAdvertiserTrackingEnabled, isFalse);
       expect(config.singularEnableLogging, isTrue);
       expect(config.singularWaitForTrackingAuthSeconds, 15);
+    });
+
+    test('treats default placeholder values as disabled providers', () {
+      final loader = RemoteAnalyticsConfigLoader(
+        httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+        cache: _MemoryConfigCache(),
+        platform: TargetPlatform.android,
+      );
+
+      final config = loader.parse(_defaultRemoteJson);
+
+      expect(config.facebookAppId, 'YOUR_FACEBOOK_APP_ID_ANDROID');
+      expect(config.facebookClientToken, 'YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID');
+      expect(config.singularApiKey, 'YOUR_SINGULAR_API_KEY_ANDROID');
+      expect(config.singularSecret, 'YOUR_SINGULAR_SECRET_ANDROID');
+      expect(config.enableFacebook, isFalse);
+      expect(config.enableSingular, isFalse);
+      expect(config.validate(), isEmpty);
     });
 
     test('parses ios values from the same remote config json', () {
@@ -398,6 +447,38 @@ const String _remoteJson = '''
     "android": {
       "api_key": "singular_key_android",
       "secret": "singular_secret_android"
+    },
+    "enable_logging": true,
+    "wait_for_tracking_auth_seconds": 15
+  }
+}
+''';
+
+const String _defaultRemoteJson = '''
+{
+  "version": 1,
+  "enable_facebook": true,
+  "enable_singular": true,
+  "facebook": {
+    "ios": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_IOS",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_IOS"
+    },
+    "android": {
+      "app_id": "YOUR_FACEBOOK_APP_ID_ANDROID",
+      "client_token": "YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID"
+    },
+    "auto_log_app_events_enabled": true,
+    "advertiser_tracking_enabled": true
+  },
+  "singular": {
+    "ios": {
+      "api_key": "YOUR_SINGULAR_API_KEY_IOS",
+      "secret": "YOUR_SINGULAR_SECRET_IOS"
+    },
+    "android": {
+      "api_key": "YOUR_SINGULAR_API_KEY_ANDROID",
+      "secret": "YOUR_SINGULAR_SECRET_ANDROID"
     },
     "enable_logging": true,
     "wait_for_tracking_auth_seconds": 15

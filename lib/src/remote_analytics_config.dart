@@ -287,37 +287,75 @@ class RemoteAnalyticsConfigLoader {
       );
     }
 
-    final facebook = _readMap(decoded, 'facebook');
-    final singular = _readMap(decoded, 'singular');
     final platformKey = _platformKey(_platform ?? defaultTargetPlatform);
-    final facebookPlatform = _readPlatformMap(facebook, platformKey);
-    final singularPlatform = _readPlatformMap(singular, platformKey);
+    final facebookEnabledByConfig = _readBool(
+      decoded,
+      'enable_facebook',
+      fallback: true,
+    );
+    final singularEnabledByConfig = _readBool(
+      decoded,
+      'enable_singular',
+      fallback: true,
+    );
 
-    return AnalyticsConfig(
-      facebookAppId: _readRequiredString(facebookPlatform, 'app_id'),
-      facebookClientToken: _readRequiredString(
+    final facebook = _readOptionalMap(decoded, 'facebook');
+    final singular = _readOptionalMap(decoded, 'singular');
+
+    String? facebookAppId;
+    String? facebookClientToken;
+    if (facebookEnabledByConfig) {
+      final facebookPlatform = _readPlatformMap(
+        _requireMap(facebook, 'facebook'),
+        platformKey,
+      );
+      facebookAppId = _readRequiredString(facebookPlatform, 'app_id');
+      facebookClientToken = _readRequiredString(
         facebookPlatform,
         'client_token',
-      ),
-      singularApiKey: _readRequiredString(singularPlatform, 'api_key'),
-      singularSecret: _readRequiredString(singularPlatform, 'secret'),
-      enableFacebook: _readBool(decoded, 'enable_facebook', fallback: true),
-      enableSingular: _readBool(decoded, 'enable_singular', fallback: true),
+      );
+    }
+
+    var singularApiKey = '';
+    var singularSecret = '';
+    if (singularEnabledByConfig) {
+      final singularPlatform = _readPlatformMap(
+        _requireMap(singular, 'singular'),
+        platformKey,
+      );
+      singularApiKey = _readRequiredString(singularPlatform, 'api_key');
+      singularSecret = _readRequiredString(singularPlatform, 'secret');
+    }
+
+    final enableFacebook =
+        facebookEnabledByConfig &&
+        !_hasDefaultPlaceholder(<String?>[facebookAppId, facebookClientToken]);
+    final enableSingular =
+        singularEnabledByConfig &&
+        !_hasDefaultPlaceholder(<String?>[singularApiKey, singularSecret]);
+
+    return AnalyticsConfig(
+      facebookAppId: facebookAppId,
+      facebookClientToken: facebookClientToken,
+      singularApiKey: singularApiKey,
+      singularSecret: singularSecret,
+      enableFacebook: enableFacebook,
+      enableSingular: enableSingular,
       facebookAutoLogAppEventsEnabled: _readNullableBool(
-        facebook,
+        facebook ?? const <String, Object?>{},
         'auto_log_app_events_enabled',
       ),
       facebookAdvertiserTrackingEnabled: _readNullableBool(
-        facebook,
+        facebook ?? const <String, Object?>{},
         'advertiser_tracking_enabled',
       ),
       singularEnableLogging: _readBool(
-        singular,
+        singular ?? const <String, Object?>{},
         'enable_logging',
         fallback: false,
       ),
       singularWaitForTrackingAuthSeconds: _readInt(
-        singular,
+        singular ?? const <String, Object?>{},
         'wait_for_tracking_auth_seconds',
         fallback: 0,
       ),
@@ -366,12 +404,25 @@ class RemoteAnalyticsConfigLoader {
     throw FormatException('Missing or invalid "$platformKey" section.');
   }
 
-  static Map<String, Object?> _readMap(
+  static Map<String, Object?>? _readOptionalMap(
     Map<String, Object?> source,
     String key,
   ) {
     final value = source[key];
+    if (value == null) {
+      return null;
+    }
     if (value is Map<String, Object?>) {
+      return value;
+    }
+    throw FormatException('Missing or invalid "$key" section.');
+  }
+
+  static Map<String, Object?> _requireMap(
+    Map<String, Object?>? value,
+    String key,
+  ) {
+    if (value != null) {
       return value;
     }
     throw FormatException('Missing or invalid "$key" section.');
@@ -384,6 +435,24 @@ class RemoteAnalyticsConfigLoader {
     }
     throw FormatException('Missing or empty "$key" value.');
   }
+
+  static bool _hasDefaultPlaceholder(Iterable<String?> values) {
+    return values.any(
+      (value) =>
+          value != null && _defaultPlaceholderValues.contains(value.trim()),
+    );
+  }
+
+  static const Set<String> _defaultPlaceholderValues = <String>{
+    'YOUR_FACEBOOK_APP_ID_IOS',
+    'YOUR_FACEBOOK_CLIENT_TOKEN_IOS',
+    'YOUR_FACEBOOK_APP_ID_ANDROID',
+    'YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID',
+    'YOUR_SINGULAR_API_KEY_IOS',
+    'YOUR_SINGULAR_SECRET_IOS',
+    'YOUR_SINGULAR_API_KEY_ANDROID',
+    'YOUR_SINGULAR_SECRET_ANDROID',
+  };
 
   static bool _readBool(
     Map<String, Object?> source,
