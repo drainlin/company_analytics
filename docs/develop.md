@@ -2,14 +2,14 @@
 
 这个包是项目内统一埋点入口，封装仓库内置的 Facebook App Events 和 Singular Flutter SDK。
 
-当前主流程是运行时远程配置：启动时从 URL 拉取 JSON，按平台解析参数，再由 Flutter 传给 Facebook / Singular 初始化。开发期不再把 Facebook app id、client token 或 Singular key 预先写入业务工程。
+当前主流程由“Facebook 原生启动配置 + 运行时远程配置”组成：Facebook 凭据和自动采集开关在宿主原生工程预置，并与远程 JSON 保持一致；Singular 凭据只由远程配置下发。没有原生 Facebook 配置时保留延迟初始化兼容路径。
 
 ## 环境要求
 
 - Dart: `>=3.8.1 <4.0.0`
 - Flutter: `>=3.38.0`
-- Facebook App Events Flutter SDK: 仓库内置版本 `0.30.2`
-- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.1`
+- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.1`
+- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.2`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
 - App Tracking Transparency Flutter SDK: `^2.0.7`
@@ -109,7 +109,7 @@ curl -fsS http://127.0.0.1:8765/analytics.remote.dev.json
 
 ## 初始化流程
 
-业务侧推荐只调用 `initFromRemoteConfig()`。iOS 会在这个流程内请求 ATT，因此业务侧应在首屏渲染后或自定义 ATT 说明弹窗后调用，不要在 `runApp()` 之前 `await` 初始化。
+业务侧推荐只调用 `initFromRemoteConfig()`。iOS 会在这个流程内请求 ATT，因此业务侧应在首屏渲染后或自定义 ATT 说明弹窗后调用，不要在 `runApp()` 之前等待系统弹窗。若合规策略要求授权前完全禁用自动采集，宿主原生配置中的 Facebook auto-log 和 advertiser ID collection 必须先设为 `false`，再由远程配置在授权后启用。
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
@@ -138,9 +138,9 @@ Future<void> initAnalytics() async {
 1. `RemoteAnalyticsConfigLoader` 请求 URL。
 2. 按当前平台解析 JSON。
 3. 校验 `AnalyticsConfig`。
-4. iOS 检查 ATT 状态；如果是 `notDetermined`，先请求系统 ATT 权限。
-5. Facebook provider 调用 `FacebookAppEvents.configure(appId, clientToken)`。
-6. Facebook native SDK 在收到 runtime 参数后初始化。
+4. 宿主存在 Facebook 原生凭据时，CoreKit 已在插件注册阶段启动；否则继续使用运行时兼容路径。
+5. iOS 检查 ATT 状态；如果是 `notDetermined`，先请求系统 ATT 权限。
+6. Facebook provider 原子传入 app id、client token、auto-log 和 advertiser ID collection 配置；延迟初始化路径会在需要时补记当前 activation。
 7. Singular provider 使用 runtime key/secret 初始化。
 8. 初始化前缓存的事件开始补发。
 
@@ -198,12 +198,9 @@ await loader.clearCache(remoteConfig);
 
 ## 平台配置原则
 
-不要再把以下值写入业务工程的 `Info.plist`、`AndroidManifest.xml` 或 Android resources：
+生产环境应把 Facebook app id、client token、`AutoLogAppEventsEnabled` 和 advertiser ID collection 开关写入宿主原生配置，并保证与远程 JSON 一致。这样 Meta SDK 可以在首个原生生命周期回调前启动。未配置时仍支持运行时兼容路径，但不建议依赖它采集最早发生的无代码事件或 IAP。
 
-- Facebook app id
-- Facebook client token
-- Singular api key
-- Singular secret
+Singular api key 和 secret 仍只由远程配置下发。
 
 仍需保留 SDK 正常运行需要的平台能力配置，例如：
 
@@ -264,7 +261,7 @@ await analytics.clearUser();
 
 ## 初始化前事件策略
 
-默认策略：`track()` 在 `initFromRemoteConfig()` 完成前被调用时，事件会先缓存，初始化成功后补发。
+默认策略：`track()` 在 `initFromRemoteConfig()` 完成前被调用时，事件会写入 SharedPreferences 持久队列，初始化成功后补发。事件只有在所有目标 provider 成功后才出队；单个 provider 失败时其他 provider 仍会继续发送，并抛出 `AnalyticsDeliveryException` 供业务监控。队列采用 at-least-once 语义，收入事件应使用稳定订单 ID 去重。默认上限为 200 条，超限丢弃最旧事件并记录在 `droppedPendingEventCount`；补发出队采用单次批量持久化，避免逐条全量重写。
 
 严格模式：
 

@@ -1,3 +1,19 @@
+## 0.1.3
+
+* Configure Facebook auto-log and advertiser-id flags atomically with native SDK startup.
+* Restore early native Facebook initialization when platform credentials are present.
+* Recover the initial Android activation when runtime initialization happens after resume.
+* Map shared event names to Meta standard events and use the native Purchase API.
+* Isolate provider delivery failures and retain failed queued events for retry.
+* Persist the pre-initialization event outbox and serialize concurrent queue operations.
+* Validate event revenue fields before queueing or delivery.
+* Bound the persistent outbox and batch its drain writes.
+* Await Singular platform calls so native delivery errors reach retry handling.
+* Preserve an explicitly disabled native Facebook auto-log setting on iOS.
+* Serialize concurrent analytics initialization attempts.
+* Remove production codeless debug logging and pin the Meta native SDK versions.
+* Update the vendored Singular Android plugin for AGP 9 and Maven Central.
+
 ## 0.1.2
 
 * Increase the default remote config timeout to 15 seconds.

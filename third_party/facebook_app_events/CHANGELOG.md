@@ -1,3 +1,10 @@
+## 0.30.2+company.1
+
+- Configure app credentials, auto-log, and advertiser ID collection atomically.
+- Initialize early from native credentials and recover activation after deferred runtime initialization.
+- Reject runtime/native credential mismatches and keep early iOS URL handling active.
+- Pin the verified Facebook Android and iOS SDK versions and remove production codeless debug logging.
+
 ## 0.30.2
 
 - **Update Android toolchain** — AGP 8.13.0, Gradle 8.13, Kotlin 2.4.0, `compileSdk`/`targetSdk` 36. No change to `minSdk` or the Facebook Android SDK Maven range (`[18.0,19.0)`), which already resolves to the latest 18.x release (18.3.0); the CocoaPods/SPM `~> 18.0` / `"18.0.0"..<"19.0.0"` iOS pins likewise already cover the latest 18.x release (18.1.0), so no iOS dependency changes were needed this round.

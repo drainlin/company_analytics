@@ -29,14 +29,14 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
       ..waitForTrackingAuthorizationWithTimeoutInterval =
           waitForTrackingAuthSeconds;
 
-    _singular.start(config);
+    await _singular.start(config);
   }
 
   @override
   Future<void> track(AnalyticsEvent event) async {
     if (event.hasRevenue) {
       if (event.parameters.isEmpty) {
-        _singular.customRevenue(
+        await _singular.customRevenue(
           event.name,
           event.revenueCurrency!,
           event.valueToSum!,
@@ -44,7 +44,7 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
         return;
       }
 
-      _singular.customRevenueWithAttributes(
+      await _singular.customRevenueWithAttributes(
         event.name,
         event.revenueCurrency!,
         event.valueToSum!,
@@ -54,20 +54,20 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
     }
 
     if (event.parameters.isEmpty) {
-      _singular.event(event.name);
+      await _singular.event(event.name);
       return;
     }
 
-    _singular.eventWithArgs(event.name, event.parameters);
+    await _singular.eventWithArgs(event.name, event.parameters);
   }
 
   @override
   Future<void> setUserId(String userId) async {
-    _singular.setCustomUserId(userId);
+    await _singular.setCustomUserId(userId);
   }
 
   @override
   Future<void> clearUser() async {
-    _singular.unsetCustomUserId();
+    await _singular.unsetCustomUserId();
   }
 }

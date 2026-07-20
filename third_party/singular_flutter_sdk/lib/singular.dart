@@ -16,27 +16,28 @@ class Singular {
   static const MethodChannel _channel = const MethodChannel('singular-api');
   static SingularConfig? singularConfig;
 
-  static void start(SingularConfig config) {
+  static Future<void> start(SingularConfig config) async {
     singularConfig = config;
     _setWrapperNameAndVersion(_SDK_NAME, _SDK_VERSION);
-    _channel.invokeMethod('start', config.toMap);
+    await _channel.invokeMethod<void>('start', config.toMap);
   }
 
-  static void event(String eventName) {
-    _channel.invokeMethod('event', {'eventName': eventName});
+  static Future<void> event(String eventName) {
+    return _channel.invokeMethod<void>('event', {'eventName': eventName});
   }
 
-  static void eventWithArgs(String eventName, Map args) {
-    _channel
-        .invokeMethod('eventWithArgs', {'eventName': eventName, 'args': args});
+  static Future<void> eventWithArgs(String eventName, Map args) {
+    return _channel
+        .invokeMethod<void>('eventWithArgs', {'eventName': eventName, 'args': args});
   }
 
-  static void setCustomUserId(String customUserId) {
-    _channel.invokeMethod('setCustomUserId', {'customUserId': customUserId});
+  static Future<void> setCustomUserId(String customUserId) {
+    return _channel.invokeMethod<void>(
+        'setCustomUserId', {'customUserId': customUserId});
   }
 
-  static void unsetCustomUserId() {
-    _channel.invokeMethod('unsetCustomUserId');
+  static Future<void> unsetCustomUserId() {
+    return _channel.invokeMethod<void>('unsetCustomUserId');
   }
 
   static void setDeviceCustomUserId(String customUserId) {
@@ -55,14 +56,15 @@ class Singular {
 
 // REVENUE
 
-  static void customRevenue(String eventName, String currency, double amount) {
-    _channel.invokeMethod('customRevenue',
+  static Future<void> customRevenue(
+      String eventName, String currency, double amount) {
+    return _channel.invokeMethod<void>('customRevenue',
         {'eventName': eventName, 'currency': currency, 'amount': amount});
   }
 
-  static void customRevenueWithAttributes(
+  static Future<void> customRevenueWithAttributes(
       String eventName, String currency, double amount, Map attributes) {
-    _channel.invokeMethod('customRevenueWithAttributes', {
+    return _channel.invokeMethod<void>('customRevenueWithAttributes', {
       'eventName': eventName,
       'currency': currency,
       'amount': amount,

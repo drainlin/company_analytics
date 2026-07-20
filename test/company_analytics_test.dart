@@ -5,11 +5,21 @@ import 'package:company_analytics/company_analytics.dart';
 import 'package:company_analytics/src/providers/facebook_provider.dart';
 import 'package:company_analytics/src/providers/singular_provider.dart';
 import 'package:facebook_app_events/facebook_app_events.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:singular_flutter_sdk/singular.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
+import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
+import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferencesAsyncPlatform.instance =
+        InMemorySharedPreferencesAsync.empty();
+  });
+
   group('CompanyAnalytics', () {
     test('queues events before init and flushes after init', () async {
       final provider = InMemoryAnalyticsProvider();
@@ -41,6 +51,17 @@ void main() {
       expect(
         () => analytics.track(const AnalyticsEvent(name: 'purchase')),
         throwsA(isA<AnalyticsNotInitializedException>()),
+      );
+    });
+
+    test('rejects incomplete revenue events before queueing', () async {
+      final analytics = CompanyAnalytics();
+
+      await expectLater(
+        analytics.track(
+          const AnalyticsEvent(name: 'purchase_success', valueToSum: 9.99),
+        ),
+        throwsA(isA<AnalyticsEventValidationException>()),
       );
     });
 
@@ -234,6 +255,143 @@ void main() {
         ]);
       },
     );
+
+    test('continues delivering when one provider fails', () async {
+      final failing = _FailingAnalyticsProvider();
+      final recording = InMemoryAnalyticsProvider();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[failing, recording],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.android,
+        ),
+      );
+
+      await expectLater(
+        analytics.track(const AnalyticsEvent(name: 'view_home')),
+        throwsA(isA<AnalyticsDeliveryException>()),
+      );
+      expect(recording.trackedEvents.single.name, 'view_home');
+    });
+
+    test('keeps a queued event until a retry succeeds', () async {
+      final provider = _FailOnceAnalyticsProvider();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[provider],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+
+      await analytics.track(const AnalyticsEvent(name: 'queued_event'));
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.android,
+        ),
+      );
+      await analytics.track(const AnalyticsEvent(name: 'current_event'));
+
+      expect(provider.successfulEvents, <String>[
+        'queued_event',
+        'current_event',
+      ]);
+    });
+
+    test('restores queued events after recreating the facade', () async {
+      final first = CompanyAnalytics();
+      await first.track(const AnalyticsEvent(name: 'persisted_event'));
+
+      final provider = InMemoryAnalyticsProvider();
+      final second = CompanyAnalytics(
+        providers: <AnalyticsProvider>[provider],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+      await second.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.android,
+        ),
+      );
+
+      expect(provider.trackedEvents.single.name, 'persisted_event');
+    });
+
+    test('serializes concurrent persistent outbox writes', () async {
+      final store = _BlockingFirstSaveEventStore();
+      final analytics = CompanyAnalytics(eventStore: store);
+
+      final first = analytics.track(const AnalyticsEvent(name: 'first'));
+      await store.firstSaveStarted.future;
+      final second = analytics.track(const AnalyticsEvent(name: 'second'));
+      store.releaseFirstSave.complete();
+      await Future.wait(<Future<void>>[first, second]);
+
+      expect(store.events.map((event) => event.name), <String>[
+        'first',
+        'second',
+      ]);
+    });
+
+    test('bounds the persistent outbox and drops the oldest event', () async {
+      final store = _RecordingEventStore();
+      final analytics = CompanyAnalytics(
+        eventStore: store,
+        maxPendingEvents: 3,
+      );
+
+      for (var index = 1; index <= 4; index += 1) {
+        await analytics.track(AnalyticsEvent(name: 'event_$index'));
+      }
+
+      expect(analytics.droppedPendingEventCount, 1);
+      expect(store.events.map((event) => event.name), <String>[
+        'event_2',
+        'event_3',
+        'event_4',
+      ]);
+    });
+
+    test('persists a successful outbox drain in one batch', () async {
+      final store = _RecordingEventStore(
+        events: <AnalyticsEvent>[
+          const AnalyticsEvent(name: 'first'),
+          const AnalyticsEvent(name: 'second'),
+          const AnalyticsEvent(name: 'third'),
+        ],
+      );
+      final provider = InMemoryAnalyticsProvider();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[provider],
+        eventStore: store,
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.android,
+        ),
+      );
+
+      expect(provider.trackedEvents, hasLength(3));
+      expect(store.events, isEmpty);
+      expect(store.saveCount, 1);
+    });
   });
 
   group('RemoteAnalyticsConfigLoader', () {
@@ -442,6 +600,8 @@ void main() {
         appEvents: appEvents,
         appId: 'fb_app',
         clientToken: 'fb_token',
+        autoLogAppEventsEnabled: true,
+        advertiserTrackingEnabled: false,
         testModeEnabled: true,
       );
 
@@ -449,6 +609,8 @@ void main() {
 
       expect(appEvents.configuredAppId, 'fb_app');
       expect(appEvents.configuredClientToken, 'fb_token');
+      expect(appEvents.configuredAutoLogAppEventsEnabled, isTrue);
+      expect(appEvents.configuredAdvertiserIdCollectionEnabled, isFalse);
       expect(appEvents.debugLoggingEnabled, isTrue);
     });
 
@@ -465,7 +627,7 @@ void main() {
       expect(appEvents.flushCount, 1);
     });
 
-    test('adds Facebook currency parameter for revenue events', () async {
+    test('uses Facebook purchase API for purchase revenue events', () async {
       final appEvents = _RecordingFacebookAppEvents();
       final provider = FacebookAnalyticsProvider(appEvents: appEvents);
 
@@ -478,12 +640,32 @@ void main() {
         ),
       );
 
-      expect(appEvents.lastName, 'purchase_success');
-      expect(appEvents.lastValueToSum, 9.99);
+      expect(appEvents.lastName, isNull);
+      expect(appEvents.lastPurchaseAmount, 9.99);
+      expect(appEvents.lastPurchaseCurrency, 'USD');
       expect(appEvents.lastParameters, <String, dynamic>{
         'product_id': 'sub_monthly',
-        FacebookAppEvents.paramNameCurrency: 'USD',
       });
+    });
+
+    test('rejects Facebook purchase events without revenue', () async {
+      final provider = FacebookAnalyticsProvider(
+        appEvents: _RecordingFacebookAppEvents(),
+      );
+
+      await expectLater(
+        provider.track(const AnalyticsEvent(name: 'purchase_success')),
+        throwsA(isA<AnalyticsEventValidationException>()),
+      );
+    });
+
+    test('maps shared event names to Facebook standard events', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final provider = FacebookAnalyticsProvider(appEvents: appEvents);
+
+      await provider.track(const AnalyticsEvent(name: 'view_content'));
+
+      expect(appEvents.lastName, FacebookAppEvents.eventNameViewedContent);
     });
   });
 
@@ -561,6 +743,42 @@ void main() {
       expect(singular.calls, <String>['event', 'eventWithArgs']);
       expect(singular.lastEventName, 'view_home');
       expect(singular.lastArgs, <String, dynamic>{'source': 'tab'});
+    });
+
+    test('propagates Singular platform delivery errors', () async {
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: _FailingSingularSdkFacade(),
+      );
+
+      await expectLater(
+        provider.track(const AnalyticsEvent(name: 'view_home')),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('observes Singular MethodChannel exceptions', () async {
+      const channel = MethodChannel('singular-api');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'delivery_failed');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      await expectLater(
+        Singular.event('view_home'),
+        throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            'code',
+            'delivery_failed',
+          ),
+        ),
+      );
     });
   });
 }
@@ -749,6 +967,43 @@ class _MemoryConfigCache implements AnalyticsConfigCache {
   }
 }
 
+class _BlockingFirstSaveEventStore implements AnalyticsEventStore {
+  final Completer<void> firstSaveStarted = Completer<void>();
+  final Completer<void> releaseFirstSave = Completer<void>();
+  List<AnalyticsEvent> events = <AnalyticsEvent>[];
+  var _saveCount = 0;
+
+  @override
+  Future<List<AnalyticsEvent>> load() async => List<AnalyticsEvent>.of(events);
+
+  @override
+  Future<void> save(List<AnalyticsEvent> events) async {
+    _saveCount += 1;
+    if (_saveCount == 1) {
+      firstSaveStarted.complete();
+      await releaseFirstSave.future;
+    }
+    this.events = List<AnalyticsEvent>.of(events);
+  }
+}
+
+class _RecordingEventStore implements AnalyticsEventStore {
+  _RecordingEventStore({List<AnalyticsEvent>? events})
+    : events = List<AnalyticsEvent>.of(events ?? const <AnalyticsEvent>[]);
+
+  List<AnalyticsEvent> events;
+  int saveCount = 0;
+
+  @override
+  Future<List<AnalyticsEvent>> load() async => List<AnalyticsEvent>.of(events);
+
+  @override
+  Future<void> save(List<AnalyticsEvent> events) async {
+    saveCount += 1;
+    this.events = List<AnalyticsEvent>.of(events);
+  }
+}
+
 class _RecordingTrackingAuthorizationRequester
     implements TrackingAuthorizationRequester {
   _RecordingTrackingAuthorizationRequester(this.order);
@@ -760,6 +1015,33 @@ class _RecordingTrackingAuthorizationRequester
   Future<void> requestIfNeeded() async {
     requestCount += 1;
     order.add('att');
+  }
+}
+
+class _FailingAnalyticsProvider extends InMemoryAnalyticsProvider {
+  @override
+  String get name => 'failing';
+
+  @override
+  Future<void> track(AnalyticsEvent event) async {
+    throw StateError('delivery failed');
+  }
+}
+
+class _FailOnceAnalyticsProvider extends InMemoryAnalyticsProvider {
+  var _shouldFail = true;
+  final List<String> successfulEvents = <String>[];
+
+  @override
+  String get name => 'fail_once';
+
+  @override
+  Future<void> track(AnalyticsEvent event) async {
+    if (_shouldFail) {
+      _shouldFail = false;
+      throw StateError('delivery failed once');
+    }
+    successfulEvents.add(event.name);
   }
 }
 
@@ -777,19 +1059,27 @@ class _OrderingAnalyticsProvider extends InMemoryAnalyticsProvider {
 class _RecordingFacebookAppEvents extends FacebookAppEvents {
   String? configuredAppId;
   String? configuredClientToken;
+  bool? configuredAutoLogAppEventsEnabled;
+  bool? configuredAdvertiserIdCollectionEnabled;
   bool? debugLoggingEnabled;
   int flushCount = 0;
   String? lastName;
   Map<String, dynamic>? lastParameters;
   double? lastValueToSum;
+  double? lastPurchaseAmount;
+  String? lastPurchaseCurrency;
 
   @override
   Future<void> configure({
     required String appId,
     required String clientToken,
+    bool? autoLogAppEventsEnabled,
+    bool? advertiserIdCollectionEnabled,
   }) async {
     configuredAppId = appId;
     configuredClientToken = clientToken;
+    configuredAutoLogAppEventsEnabled = autoLogAppEventsEnabled;
+    configuredAdvertiserIdCollectionEnabled = advertiserIdCollectionEnabled;
   }
 
   @override
@@ -812,6 +1102,17 @@ class _RecordingFacebookAppEvents extends FacebookAppEvents {
     lastParameters = parameters;
     lastValueToSum = valueToSum;
   }
+
+  @override
+  Future<void> logPurchase({
+    required double amount,
+    required String currency,
+    Map<String, dynamic>? parameters,
+  }) async {
+    lastPurchaseAmount = amount;
+    lastPurchaseCurrency = currency;
+    lastParameters = parameters;
+  }
 }
 
 class _RecordingSingularSdkFacade implements SingularSdkFacade {
@@ -822,25 +1123,29 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   Map? lastArgs;
 
   @override
-  void start(SingularConfig config) {
+  Future<void> start(SingularConfig config) async {
     calls.add('start');
   }
 
   @override
-  void event(String eventName) {
+  Future<void> event(String eventName) async {
     calls.add('event');
     lastEventName = eventName;
   }
 
   @override
-  void eventWithArgs(String eventName, Map args) {
+  Future<void> eventWithArgs(String eventName, Map args) async {
     calls.add('eventWithArgs');
     lastEventName = eventName;
     lastArgs = args;
   }
 
   @override
-  void customRevenue(String eventName, String currency, double amount) {
+  Future<void> customRevenue(
+    String eventName,
+    String currency,
+    double amount,
+  ) async {
     calls.add('customRevenue');
     lastEventName = eventName;
     lastCurrency = currency;
@@ -848,12 +1153,12 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   }
 
   @override
-  void customRevenueWithAttributes(
+  Future<void> customRevenueWithAttributes(
     String eventName,
     String currency,
     double amount,
     Map attributes,
-  ) {
+  ) async {
     calls.add('customRevenueWithAttributes');
     lastEventName = eventName;
     lastCurrency = currency;
@@ -862,8 +1167,15 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   }
 
   @override
-  void setCustomUserId(String customUserId) {}
+  Future<void> setCustomUserId(String customUserId) async {}
 
   @override
-  void unsetCustomUserId() {}
+  Future<void> unsetCustomUserId() async {}
+}
+
+class _FailingSingularSdkFacade extends _RecordingSingularSdkFacade {
+  @override
+  Future<void> event(String eventName) async {
+    throw StateError('Singular platform delivery failed');
+  }
 }

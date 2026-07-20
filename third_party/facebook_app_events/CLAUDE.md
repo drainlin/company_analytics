@@ -18,11 +18,11 @@ The MethodChannel name is `flutter.oddbit.id/facebook_app_events`.
 
 ## Facebook SDK version policy
 
-The plugin follows the **major** version of the Facebook SDK (currently v18.x). Dependency ranges should stay major-only:
+This vendored company fork pins the verified Facebook SDK versions so a transitive native update cannot change analytics behavior without review:
 
-- Android (`android/build.gradle`): `com.facebook.android:facebook-android-sdk:[18.0,19.0)`
-- iOS CocoaPods (`ios/facebook_app_events.podspec`): `FBSDKCoreKit`, `~> 18.0`
-- iOS SPM (`ios/facebook_app_events/Package.swift`): `"18.0.0"..<"19.0.0"`
+- Android (`android/build.gradle`): `com.facebook.android:facebook-android-sdk:18.2.3`
+- iOS CocoaPods (`ios/facebook_app_events.podspec`): `FBSDKCoreKit`, `18.1.0`
+- iOS SPM (`ios/facebook_app_events/Package.swift`): exact `18.1.0`
 
 ## Known platform divergence
 

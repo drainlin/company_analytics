@@ -81,10 +81,16 @@ class FacebookAppEvents {
   Future<void> configure({
     required String appId,
     required String clientToken,
+    bool? autoLogAppEventsEnabled,
+    bool? advertiserIdCollectionEnabled,
   }) {
     return _channel.invokeMethod<void>('configure', <String, dynamic>{
       'appId': appId,
       'clientToken': clientToken,
+      if (autoLogAppEventsEnabled != null)
+        'autoLogAppEventsEnabled': autoLogAppEventsEnabled,
+      if (advertiserIdCollectionEnabled != null)
+        'advertiserIdCollectionEnabled': advertiserIdCollectionEnabled,
     });
   }
 

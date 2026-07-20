@@ -28,6 +28,7 @@ static NSDictionary *configDict;
         [self setCustomUserId:call withResult:result];
     } else if ([UNSET_CUSTOM_USER_ID isEqualToString:call.method]) {
         [Singular unsetCustomUserId];
+        result(nil);
     } else if ([SET_DEVICE_CUSTOM_USER_ID isEqualToString:call.method]) {
         [self setDeviceCustomUserId:call withResult:result];
     } else if ([REGISTER_DEVICE_TOKEN_FOR_UNINSTALL isEqualToString:call.method]) {
@@ -227,12 +228,14 @@ static NSDictionary *configDict;
 - (void)start:(FlutterMethodCall *)call withResult:(FlutterResult)result {
     configDict = call.arguments;
     [SingularSDK initSDK];
+    result(nil);
 }
 
 - (void)event:(FlutterMethodCall *)call withResult:(FlutterResult)result {
     NSString *eventName =  call.arguments[@"eventName"];
 
     [Singular event:eventName];
+    result(nil);
 }
 
 - (void)eventWithArgs:(FlutterMethodCall *)call withResult:(FlutterResult)result {
@@ -240,12 +243,14 @@ static NSDictionary *configDict;
     NSDictionary *args = call.arguments[@"args"];
 
     [Singular event:eventName withArgs:args];
+    result(nil);
 }
 
 - (void)setCustomUserId:(FlutterMethodCall *)call withResult:(FlutterResult)result {
     NSString *customUserId = call.arguments[@"customUserId"];
 
     [Singular setCustomUserId:customUserId];
+    result(nil);
 }
 
 - (void)setDeviceCustomUserId:(FlutterMethodCall *)call withResult:(FlutterResult)result {
@@ -268,6 +273,7 @@ static NSDictionary *configDict;
     double amount = [call.arguments[@"amount"] doubleValue];
 
     [Singular customRevenue:eventName currency:currency amount:amount];
+    result(nil);
 }
 
 - (void)customRevenueWithAttributes:(FlutterMethodCall *)call withResult:(FlutterResult)result {
@@ -277,6 +283,7 @@ static NSDictionary *configDict;
     NSDictionary *attributes = call.arguments[@"attributes"];
 
     [Singular customRevenue:eventName currency:currency amount:amount withAttributes:attributes];
+    result(nil);
 }
 
 - (void)customRevenueWithAllAttributes:(FlutterMethodCall *)call withResult:(FlutterResult)result {

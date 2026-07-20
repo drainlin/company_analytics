@@ -1,5 +1,6 @@
 export 'src/analytics_config.dart';
 export 'src/analytics_event.dart';
+export 'src/analytics_event_store.dart';
 export 'src/analytics_exception.dart';
 export 'src/analytics_provider.dart';
 export 'src/company_analytics.dart';

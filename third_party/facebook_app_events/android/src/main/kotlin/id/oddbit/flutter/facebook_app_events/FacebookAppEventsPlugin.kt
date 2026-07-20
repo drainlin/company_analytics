@@ -8,6 +8,7 @@ package id.oddbit.flutter.facebook_app_events
 import androidx.annotation.NonNull
 
 import android.app.Application
+import android.app.Activity
 import android.content.Context
 import android.os.Bundle
 import android.util.Log
@@ -32,12 +33,32 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   private var appEventsLogger: AppEventsLogger? = null
   private var anonymousId: String? = null
   private var configuredFromDart = false
+  private var facebookInitializedAtPluginAttach = false
+  private var autoLogEnabledAtPluginAttach = false
+  private var nativeAppId: String? = null
+  private var nativeClientToken: String? = null
+  private var activatedAfterDeferredInitialization = false
   private var graphApiVersion = "v24.0"
+  private var resumedActivityCount = 0
 
   private val logTag = "FacebookAppEvents"
 
   private var application: Application? = null
   private var applicationContext: Context? = null
+
+  private val lifecycleCallbacks = object : Application.ActivityLifecycleCallbacks {
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+    override fun onActivityStarted(activity: Activity) = Unit
+    override fun onActivityResumed(activity: Activity) {
+      resumedActivityCount += 1
+    }
+    override fun onActivityPaused(activity: Activity) {
+      resumedActivityCount = (resumedActivityCount - 1).coerceAtLeast(0)
+    }
+    override fun onActivityStopped(activity: Activity) = Unit
+    override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+    override fun onActivityDestroyed(activity: Activity) = Unit
+  }
 
   override fun onAttachedToEngine(@NonNull flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
     channel = MethodChannel(flutterPluginBinding.binaryMessenger, "flutter.oddbit.id/facebook_app_events")
@@ -45,9 +66,17 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     applicationContext = flutterPluginBinding.applicationContext
     application = flutterPluginBinding.applicationContext.applicationContext as? Application
+    facebookInitializedAtPluginAttach = FacebookSdk.isInitialized()
+    if (facebookInitializedAtPluginAttach) {
+      autoLogEnabledAtPluginAttach = FacebookSdk.getAutoLogAppEventsEnabled()
+      nativeAppId = FacebookSdk.getApplicationId()
+      nativeClientToken = FacebookSdk.getClientToken()
+    }
+    application?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
   }
 
   override fun onDetachedFromEngine(@NonNull binding: FlutterPlugin.FlutterPluginBinding) {
+    application?.unregisterActivityLifecycleCallbacks(lifecycleCallbacks)
     application = null
     applicationContext = null
     channel.setMethodCallHandler(null)
@@ -95,8 +124,20 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     val appId = call.argument<String>("appId")
     val clientToken = call.argument<String>("clientToken")
+    val autoLogAppEventsEnabled = call.argument<Boolean>("autoLogAppEventsEnabled")
+    val advertiserIdCollectionEnabled = call.argument<Boolean>("advertiserIdCollectionEnabled")
     if (appId.isNullOrBlank() || clientToken.isNullOrBlank()) {
       result.error("INVALID_ARGUMENT", "Facebook appId and clientToken are required", null)
+      return
+    }
+
+    if (facebookInitializedAtPluginAttach &&
+      (appId != nativeAppId || clientToken != nativeClientToken)) {
+      result.error(
+        "CONFIG_MISMATCH",
+        "Runtime Facebook credentials must match the native Android manifest configuration.",
+        null
+      )
       return
     }
 
@@ -105,12 +146,39 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     // Override before SDK initialization. Facebook Android SDK v18.x still defaults
     // to v16.0, which was removed by Meta on May 14, 2025.
     FacebookSdk.setGraphApiVersion(graphApiVersion)
+    val facebookWasInitialized = FacebookSdk.isInitialized()
+    // Meta 18.x calls getApplicationContext() when enabling auto-log, which
+    // requires an initialized SDK. Disabling it before initialization is safe
+    // and prevents the first automatic activation from racing runtime consent.
+    if (!facebookWasInitialized && autoLogAppEventsEnabled == false) {
+      FacebookSdk.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled)
+    }
+    if (advertiserIdCollectionEnabled != null) {
+      FacebookSdk.setAdvertiserIDCollectionEnabled(advertiserIdCollectionEnabled)
+    }
     if (!FacebookSdk.isInitialized()) {
       FacebookSdk.sdkInitialize(context)
+    }
+    if (autoLogAppEventsEnabled != null &&
+      (facebookWasInitialized || autoLogAppEventsEnabled)) {
+      FacebookSdk.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled)
     }
     appEventsLogger = AppEventsLogger.newLogger(context)
     anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(context)
     configuredFromDart = true
+
+    val shouldActivateCurrentActivity =
+      (!facebookInitializedAtPluginAttach || !autoLogEnabledAtPluginAttach) &&
+      !activatedAfterDeferredInitialization &&
+      resumedActivityCount > 0 &&
+      (autoLogAppEventsEnabled ?: FacebookSdk.getAutoLogAppEventsEnabled())
+    if (shouldActivateCurrentActivity) {
+      val app = application
+      if (app != null) {
+        AppEventsLogger.activateApp(app, appId)
+        activatedAfterDeferredInitialization = true
+      }
+    }
 
     result.success(null)
   }

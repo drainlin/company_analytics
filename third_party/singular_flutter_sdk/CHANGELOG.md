@@ -1,3 +1,8 @@
+## 1.8.0+company.2
+- Complete Flutter method results for initialization, user ID, event, and revenue calls.
+- Return and await those method-channel futures from the Dart API.
+- Replace JCenter with Maven Central and update Android settings for AGP 9 / Java 17.
+
 ## 1.8.0
 - Added support for upcoming Google Ads on Device Measurement
 - Updates underlying native iOS SDK to 12.8.1 and Android to 12.9.1

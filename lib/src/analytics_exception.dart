@@ -21,3 +21,16 @@ class AnalyticsInitializationException implements Exception {
     return 'AnalyticsInitializationException: $message; cause=$cause';
   }
 }
+
+class AnalyticsDeliveryException implements Exception {
+  AnalyticsDeliveryException(this.eventName, this.providerErrors);
+
+  final String eventName;
+  final Map<String, Object> providerErrors;
+
+  @override
+  String toString() {
+    return 'AnalyticsDeliveryException: event=$eventName; '
+        'providerErrors=$providerErrors';
+  }
+}

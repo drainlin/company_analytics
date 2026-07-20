@@ -32,24 +32,24 @@ class AnalyticsSdkSingletons {
 class SingularSdkFacade {
   SingularSdkFacade._();
 
-  void start(SingularConfig config) => Singular.start(config);
+  Future<void> start(SingularConfig config) => Singular.start(config);
 
-  void event(String eventName) => Singular.event(eventName);
+  Future<void> event(String eventName) => Singular.event(eventName);
 
-  void eventWithArgs(String eventName, Map args) =>
+  Future<void> eventWithArgs(String eventName, Map args) =>
       Singular.eventWithArgs(eventName, args);
 
-  void customRevenue(String eventName, String currency, double amount) {
-    Singular.customRevenue(eventName, currency, amount);
+  Future<void> customRevenue(String eventName, String currency, double amount) {
+    return Singular.customRevenue(eventName, currency, amount);
   }
 
-  void customRevenueWithAttributes(
+  Future<void> customRevenueWithAttributes(
     String eventName,
     String currency,
     double amount,
     Map attributes,
   ) {
-    Singular.customRevenueWithAttributes(
+    return Singular.customRevenueWithAttributes(
       eventName,
       currency,
       amount,
@@ -57,8 +57,8 @@ class SingularSdkFacade {
     );
   }
 
-  void setCustomUserId(String customUserId) =>
+  Future<void> setCustomUserId(String customUserId) =>
       Singular.setCustomUserId(customUserId);
 
-  void unsetCustomUserId() => Singular.unsetCustomUserId();
+  Future<void> unsetCustomUserId() => Singular.unsetCustomUserId();
 }

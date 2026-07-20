@@ -379,15 +379,18 @@ public class SingularSDK implements FlutterPlugin, ActivityAware, MethodCallHand
   private void start(final MethodCall call, final Result result) {
     configDict = (Map) call.arguments;
     initSDK();
+    result.success(null);
   }
 
   private void setCustomUserId(final MethodCall call, final Result result) {
     String customUserId = call.argument("customUserId");
     Singular.setCustomUserId(customUserId);
+    result.success(null);
   }
 
   private void unsetCustomUserId(final MethodCall call, final Result result) {
     Singular.unsetCustomUserId();
+    result.success(null);
   }
 
   private void setDeviceCustomUserId(final MethodCall call, final Result result) {
@@ -398,12 +401,14 @@ public class SingularSDK implements FlutterPlugin, ActivityAware, MethodCallHand
   private void event(final MethodCall call, final Result result) {
     String eventName = call.argument("eventName");
     Singular.event(eventName);
+    result.success(null);
   }
 
   private void eventWithArgs(final MethodCall call, final Result result) {
     String eventName = call.argument("eventName");
     Map<String, Object> extra = call.argument("args");
     Singular.event(eventName, new JSONObject(extra).toString());
+    result.success(null);
   }
 
   private void customRevenue(final MethodCall call, final Result result) {
@@ -413,6 +418,7 @@ public class SingularSDK implements FlutterPlugin, ActivityAware, MethodCallHand
     double amount = call.argument("amount");
 
     Singular.customRevenue(eventName, currency, amount);
+    result.success(null);
   }
 
   private void customRevenueWithArgs(final MethodCall call, final Result result) {
@@ -422,6 +428,7 @@ public class SingularSDK implements FlutterPlugin, ActivityAware, MethodCallHand
     Map args = call.argument("attributes");
 
     Singular.customRevenue(eventName, currency, amount, args);
+    result.success(null);
   }
 
   private void trackingOptIn(final MethodCall call, final Result result) {
