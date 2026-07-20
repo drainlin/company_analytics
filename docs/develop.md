@@ -2,13 +2,13 @@
 
 这个包是项目内统一埋点入口，封装仓库内置的 Facebook App Events 和 Singular Flutter SDK。
 
-当前主流程由“Facebook 原生启动配置 + 运行时远程配置”组成：Facebook 凭据和自动采集开关在宿主原生工程预置，并与远程 JSON 保持一致；Singular 凭据只由远程配置下发。没有原生 Facebook 配置时保留延迟初始化兼容路径。
+当前主流程以运行时远程配置为准：Facebook 凭据和自动采集开关从远程 JSON 加载，远程失败时使用上一次成功缓存；Singular 凭据同样由远程配置下发。Facebook 不再依赖宿主原生工程中的预置值启动。
 
 ## 环境要求
 
 - Dart: `>=3.8.1 <4.0.0`
 - Flutter: `>=3.38.0`
-- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.1`
+- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.2`
 - Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.2`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
@@ -109,7 +109,7 @@ curl -fsS http://127.0.0.1:8765/analytics.remote.dev.json
 
 ## 初始化流程
 
-业务侧推荐只调用 `initFromRemoteConfig()`。iOS 会在这个流程内请求 ATT，因此业务侧应在首屏渲染后或自定义 ATT 说明弹窗后调用，不要在 `runApp()` 之前等待系统弹窗。若合规策略要求授权前完全禁用自动采集，宿主原生配置中的 Facebook auto-log 和 advertiser ID collection 必须先设为 `false`，再由远程配置在授权后启用。
+业务侧推荐只调用 `initFromRemoteConfig()`。iOS 会在这个流程内请求 ATT，因此业务侧应在首屏渲染后或自定义 ATT 说明弹窗后调用，不要在 `runApp()` 之前等待系统弹窗。若合规策略要求禁用自动采集，应在远程 JSON 中把 Facebook auto-log 和 advertiser ID collection 显式设为 `false`。
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
@@ -198,7 +198,9 @@ await loader.clearCache(remoteConfig);
 
 ## 平台配置原则
 
-生产环境应把 Facebook app id、client token、`AutoLogAppEventsEnabled` 和 advertiser ID collection 开关写入宿主原生配置，并保证与远程 JSON 一致。这样 Meta SDK 可以在首个原生生命周期回调前启动。未配置时仍支持运行时兼容路径，但不建议依赖它采集最早发生的无代码事件或 IAP。
+Facebook app id、client token、`AutoLogAppEventsEnabled` 和 advertiser ID collection 开关只以远程或缓存 JSON 为准。Android 会移除 Meta manifest auto-init provider；iOS 会等 Dart 配置完成后再启动 CoreKit。旧 SDK 留下的原生 Facebook 值不会覆盖新 JSON，也不会触发凭据不一致错误。
+
+这个设计不保证 JSON 完成前的最早自动事件，保证的是设备成功缓存新配置后，后续冷启动会用远程配置（失败时用缓存）初始化 Facebook。URL scheme、Facebook Login/deep link 等构建期能力不在此保证内，换 app id 时仍需随应用发版更新。
 
 Singular api key 和 secret 仍只由远程配置下发。
 

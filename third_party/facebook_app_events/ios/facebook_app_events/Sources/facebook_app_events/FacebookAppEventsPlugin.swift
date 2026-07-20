@@ -10,10 +10,6 @@ import FBSDKCoreKit_Basics
 
 public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
     private var configuredFromDart = false
-    private var initializedFromNativeConfiguration = false
-    private var nativeAppId: String?
-    private var nativeClientToken: String?
-    private var nativeAutoLogAppEventsEnabled = true
     private var graphApiVersion = "v24.0"
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -22,19 +18,6 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             binaryMessenger: registrar.messenger()
         )
         let instance = FacebookAppEventsPlugin()
-
-        let nativeAppId = Bundle.main.object(forInfoDictionaryKey: "FacebookAppID") as? String
-        let nativeClientToken = Bundle.main.object(forInfoDictionaryKey: "FacebookClientToken") as? String
-        instance.nativeAutoLogAppEventsEnabled =
-            Bundle.main.object(forInfoDictionaryKey: "FacebookAutoLogAppEventsEnabled") as? Bool ?? true
-        if let nativeAppId, !nativeAppId.isEmpty,
-           let nativeClientToken, !nativeClientToken.isEmpty {
-            instance.initializedFromNativeConfiguration = true
-            instance.nativeAppId = nativeAppId
-            instance.nativeClientToken = nativeClientToken
-            Settings.shared.graphAPIVersion = instance.graphApiVersion
-            ApplicationDelegate.shared.initializeSDK()
-        }
 
         registrar.addMethodCallDelegate(instance, channel: channel)
         registrar.addApplicationDelegate(instance)
@@ -52,7 +35,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         open url: URL,
         options: [UIApplication.OpenURLOptionsKey: Any] = [:]
     ) -> Bool {
-        guard configuredFromDart || initializedFromNativeConfiguration else {
+        guard configuredFromDart else {
             return false
         }
         // For Facebook SDK 18.x+, use the simplified URL handling
@@ -66,7 +49,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     /// via its modern `application(_:open:options:)` API. Returns whether the
     /// SDK handled any of the URLs.
     public func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) -> Bool {
-        guard configuredFromDart || initializedFromNativeConfiguration else {
+        guard configuredFromDart else {
             return false
         }
         var handled = false
@@ -157,34 +140,21 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             return
         }
 
-        let autoLogAppEventsEnabled = arguments["autoLogAppEventsEnabled"] as? Bool
-        let advertiserIdCollectionEnabled = arguments["advertiserIdCollectionEnabled"] as? Bool
         let resolvedAutoLogAppEventsEnabled =
-            autoLogAppEventsEnabled ?? nativeAutoLogAppEventsEnabled
+            arguments["autoLogAppEventsEnabled"] as? Bool ?? true
+        let resolvedAdvertiserIdCollectionEnabled =
+            arguments["advertiserIdCollectionEnabled"] as? Bool ?? true
 
-        if initializedFromNativeConfiguration,
-           (appId != nativeAppId || clientToken != nativeClientToken) {
-            result(FlutterError(
-                code: "CONFIG_MISMATCH",
-                message: "Runtime Facebook credentials must match FacebookAppID and FacebookClientToken from Info.plist.",
-                details: nil
-            ))
-            return
-        }
-
-        if !initializedFromNativeConfiguration {
-            // Dynamic credentials cannot be written through Settings before initialization
-            // in a Debug build. Suppress activation without an app id, initialize CoreKit,
-            // then apply the runtime settings and activate once with the resolved app id.
-            UserDefaults.standard.set(false, forKey: "FacebookAutoLogAppEventsEnabled")
-            if let advertiserIdCollectionEnabled {
-                UserDefaults.standard.set(
-                    advertiserIdCollectionEnabled,
-                    forKey: "FacebookAdvertiserIDCollectionEnabled"
-                )
-            }
-            ApplicationDelegate.shared.initializeSDK()
-        }
+        // Runtime JSON is authoritative. Meta's Settings cannot be assigned
+        // before CoreKit configures its dependencies in Debug builds, so block
+        // the stale Info.plist activation, initialize without auto-log, then
+        // replace every event setting with the runtime values below.
+        UserDefaults.standard.set(false, forKey: "FacebookAutoLogAppEventsEnabled")
+        UserDefaults.standard.set(
+            resolvedAdvertiserIdCollectionEnabled,
+            forKey: "FacebookAdvertiserIDCollectionEnabled"
+        )
+        ApplicationDelegate.shared.initializeSDK()
 
         Settings.shared.appID = appId
         Settings.shared.clientToken = clientToken
@@ -192,13 +162,14 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         // to v17.0, which was removed by Meta on September 12, 2025.
         Settings.shared.graphAPIVersion = graphApiVersion
         Settings.shared.isAutoLogAppEventsEnabled = resolvedAutoLogAppEventsEnabled
-        if let advertiserIdCollectionEnabled {
-            Settings.shared.isAdvertiserIDCollectionEnabled = advertiserIdCollectionEnabled
-        }
+        Settings.shared.isAdvertiserIDCollectionEnabled = resolvedAdvertiserIdCollectionEnabled
+        // AppEvents reads this value for every new event state. It guarantees
+        // that an App ID left in Info.plist cannot route runtime events to the
+        // previous Facebook application.
+        AppEvents.shared.loggingOverrideAppID = appId
         configuredFromDart = true
 
-        if (!initializedFromNativeConfiguration || !nativeAutoLogAppEventsEnabled),
-           resolvedAutoLogAppEventsEnabled,
+        if resolvedAutoLogAppEventsEnabled,
            UIApplication.shared.applicationState == .active {
             AppEvents.shared.activateApp()
         }

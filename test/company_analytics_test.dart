@@ -502,6 +502,38 @@ void main() {
       expect(config.singularApiKey, 'singular_key_android');
     });
 
+    test(
+      'uses newly fetched facebook credentials from cache on the next launch',
+      () async {
+        final cache = _MemoryConfigCache();
+        final remoteConfig = RemoteAnalyticsConfig(
+          url: Uri.parse('http://127.0.0.1/config.json'),
+          maxAttempts: 1,
+        );
+        final firstLaunchLoader = RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_remoteJson),
+          cache: cache,
+          platform: TargetPlatform.android,
+        );
+
+        final fetched = await firstLaunchLoader.loadResult(remoteConfig);
+
+        expect(fetched.source, RemoteAnalyticsConfigSource.remote);
+        expect(fetched.config.facebookAppId, 'fb_app_android');
+
+        final nextLaunchLoader = RemoteAnalyticsConfigLoader(
+          httpClient: _FailingConfigHttpClient(),
+          cache: cache,
+          platform: TargetPlatform.android,
+        );
+        final restored = await nextLaunchLoader.loadResult(remoteConfig);
+
+        expect(restored.source, RemoteAnalyticsConfigSource.cache);
+        expect(restored.config.facebookAppId, 'fb_app_android');
+        expect(restored.config.facebookClientToken, 'fb_token_android');
+      },
+    );
+
     test('retries remote fetch before using successful config', () async {
       final httpClient = _SequenceConfigHttpClient(<Object>[
         Exception('network down once'),

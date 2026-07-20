@@ -26,84 +26,37 @@ You must first create an app at Facebook for developers: [developers.facebook.co
    See "[Facebook Doc: Client Tokens](https://oddb.it/jex)" for more information and how to obtain it.
 
 
-### Configure Android
+This company fork is configured at runtime. Call `configure` before any other
+App Events API:
 
-Read through the "[Get Started with App Events (Android)](https://oddb.it/e2i)" and "[Getting Started with the Facebook SDK for Android](https://oddb.it/j5p)" tutorial. In particular, follow [Update Your Manifest](https://oddb.it/3si) step by adding the following into `android/app/src/main/res/values/strings.xml` (or into respective `debug` or `release` build flavor)  
-
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-  <string name="facebook_app_id">[APP_ID]</string>
-  <string name="facebook_client_token">[CLIENT_TOKEN]</string>
-  <string name="fb_login_protocol_scheme">fb[APP_ID]</string>
-  <string name="app_name">[APP_NAME]</string>
-</resources>
+```dart
+await FacebookAppEvents().configure(
+  appId: appIdFromRemoteOrCache,
+  clientToken: clientTokenFromRemoteOrCache,
+  autoLogAppEventsEnabled: true,
+  advertiserIdCollectionEnabled: true,
+);
 ```
 
-After that, add that string resource reference to your main `AndroidManifest.xml` file, directly under the `<application>` tag.
+The runtime values override Facebook credentials left in Android resources or
+Manifest metadata and iOS Info.plist. On Android the fork removes Meta's
+manifest auto-init provider; on iOS it waits for `configure` before starting
+CoreKit. If either optional switch is omitted, it defaults to `true`.
 
-```xml
-<application android:label="@string/app_name" ...>
-    ...
-  <meta-data android:name="com.facebook.sdk.ApplicationId" android:value="@string/facebook_app_id"/>
-  <meta-data android:name="com.facebook.sdk.ClientToken" android:value="@string/facebook_client_token"/>
-    ...
-</application>
-```
-
-### Configure iOS
-
-Read through the "[Getting Started with App Events for iOS](https://oddb.it/77p)" and "[Getting Started with the Facebook SDK for iOS](https://oddb.it/hei)" guides. In particular, follow [step 5](https://oddb.it/279) by opening `Info.plist` "As Source Code" and add the following
-
-- If your code does not have `CFBundleURLTypes`, add the following just before the final `</dict>` element:
-
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-  <key>CFBundleURLSchemes</key>
-  <array>
-    <string>fb[APP_ID]</string>
-  </array>
-  </dict>
-</array>
-<key>FacebookAppID</key>
-<string>[APP_ID]</string>
-<key>FacebookClientToken</key>
-<string>[CLIENT_TOKEN]</string>
-<key>FacebookDisplayName</key>
-<string>[APP_NAME]</string>
-```
-
-- If your code already contains `CFBundleURLTypes`, insert the following:
-
-```xml
-<array>
- <dict>
- <key>CFBundleURLSchemes</key>
- <array>
-   <string>fb[APP_ID]</string>
- </array>
- </dict>
-</array>
-<key>FacebookAppID</key>
-<string>[APP_ID]</string>
-<key>FacebookClientToken</key>
-<string>[CLIENT_TOKEN]</string>
-<key>FacebookDisplayName</key>
-<string>[APP_NAME]</string>
-```
+Facebook Login, URL schemes, deep links, and other build-time capabilities are
+outside App Events runtime configuration. Add or update those native entries
+only when the host app uses the corresponding feature.
 
 #### Swift Package Manager (SPM)
 
 This plugin supports iOS integration via both **CocoaPods** (Flutter default) and **Swift Package Manager**.
 
-- CocoaPods (default): no additional steps beyond the configuration above.
+- CocoaPods (default): no additional App Events credential setup is required.
 - Swift Package Manager: the plugin includes a Swift package manifest at [ios/facebook_app_events/Package.swift](ios/facebook_app_events/Package.swift). Facebook's official iOS SDK also documents SPM support (see [Swift Package Manager](https://oddb.it/s73)).
 
 #### iOS UIScene lifecycle
 
-This plugin supports both the legacy `UIApplicationDelegate` lifecycle and the newer **`UIScene`** lifecycle (the default for apps built with Flutter 3.38+). It registers as both an application delegate and a scene delegate, so Facebook URL callbacks (deep links and deferred app links) reach the SDK regardless of which lifecycle your app uses. No extra host-app configuration is required beyond the standard Facebook setup above.
+This plugin supports both the legacy `UIApplicationDelegate` lifecycle and the newer **`UIScene`** lifecycle (the default for apps built with Flutter 3.38+). It registers as both an application delegate and a scene delegate, so Facebook URL callbacks (deep links / deferred app links) reach the SDK after runtime configuration.
 
 Because this plugin uses Flutter's scene-delegate plugin APIs (`FlutterSceneLifeCycleDelegate` / `addSceneDelegate`), added in Flutter 3.38, it requires **Flutter 3.38.0 or newer**.
 
@@ -187,10 +140,8 @@ When setting up codeless events in Facebook Event Manager, you may encounter a w
 
 1. **Ignore the warning** - Your SDK is already up-to-date (version 18.x)
 2. **Codeless events should still work** despite the warning message
-3. Ensure your app is properly configured:
-   - iOS: Verify `FacebookAppID`, `FacebookClientToken`, and `FacebookDisplayName` are set in your `Info.plist`
-   - Android: Verify `facebook_app_id` and `facebook_client_token` are set in `strings.xml` and referenced in `AndroidManifest.xml`
-  - For codeless event debugging, enable codeless debug logging (see documentation [iOS](https://oddb.it/m28) and [Android](https://oddb.it/ji7))
+3. Ensure `configure` completed with the intended app id and client token before testing.
+   For codeless event debugging, enable codeless debug logging (see documentation [iOS](https://oddb.it/m28) and [Android](https://oddb.it/ji7)).
 
 4. Test codeless events on a physical device by:
    - Shaking the device to open the codeless event setup tool

@@ -1,3 +1,10 @@
+## 0.30.2+company.2
+
+- Make runtime Facebook credentials authoritative over legacy Manifest/Info.plist values.
+- Remove Android's manifest auto-init provider so App Events starts after runtime config is available.
+- Delay iOS CoreKit startup, suppress stale activation, and bind App Events to the runtime app id.
+- Default omitted runtime auto-log and advertiser-id switches to Meta's enabled defaults.
+
 ## 0.30.2+company.1
 
 - Configure app credentials, auto-log, and advertiser ID collection atomically.

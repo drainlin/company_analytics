@@ -33,10 +33,6 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   private var appEventsLogger: AppEventsLogger? = null
   private var anonymousId: String? = null
   private var configuredFromDart = false
-  private var facebookInitializedAtPluginAttach = false
-  private var autoLogEnabledAtPluginAttach = false
-  private var nativeAppId: String? = null
-  private var nativeClientToken: String? = null
   private var activatedAfterDeferredInitialization = false
   private var graphApiVersion = "v24.0"
   private var resumedActivityCount = 0
@@ -66,12 +62,6 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     applicationContext = flutterPluginBinding.applicationContext
     application = flutterPluginBinding.applicationContext.applicationContext as? Application
-    facebookInitializedAtPluginAttach = FacebookSdk.isInitialized()
-    if (facebookInitializedAtPluginAttach) {
-      autoLogEnabledAtPluginAttach = FacebookSdk.getAutoLogAppEventsEnabled()
-      nativeAppId = FacebookSdk.getApplicationId()
-      nativeClientToken = FacebookSdk.getClientToken()
-    }
     application?.registerActivityLifecycleCallbacks(lifecycleCallbacks)
   }
 
@@ -124,54 +114,48 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
     val appId = call.argument<String>("appId")
     val clientToken = call.argument<String>("clientToken")
-    val autoLogAppEventsEnabled = call.argument<Boolean>("autoLogAppEventsEnabled")
-    val advertiserIdCollectionEnabled = call.argument<Boolean>("advertiserIdCollectionEnabled")
+    val autoLogAppEventsEnabled =
+      call.argument<Boolean>("autoLogAppEventsEnabled") ?: true
+    val advertiserIdCollectionEnabled =
+      call.argument<Boolean>("advertiserIdCollectionEnabled") ?: true
     if (appId.isNullOrBlank() || clientToken.isNullOrBlank()) {
       result.error("INVALID_ARGUMENT", "Facebook appId and clientToken are required", null)
       return
     }
 
-    if (facebookInitializedAtPluginAttach &&
-      (appId != nativeAppId || clientToken != nativeClientToken)) {
-      result.error(
-        "CONFIG_MISMATCH",
-        "Runtime Facebook credentials must match the native Android manifest configuration.",
-        null
-      )
-      return
-    }
-
+    val facebookWasInitialized = FacebookSdk.isInitialized()
+    val previousAppId = if (facebookWasInitialized) FacebookSdk.getApplicationId() else null
+    val autoLogWasEnabled =
+      facebookWasInitialized && FacebookSdk.getAutoLogAppEventsEnabled()
     FacebookSdk.setApplicationId(appId)
     FacebookSdk.setClientToken(clientToken)
     // Override before SDK initialization. Facebook Android SDK v18.x still defaults
     // to v16.0, which was removed by Meta on May 14, 2025.
     FacebookSdk.setGraphApiVersion(graphApiVersion)
-    val facebookWasInitialized = FacebookSdk.isInitialized()
     // Meta 18.x calls getApplicationContext() when enabling auto-log, which
     // requires an initialized SDK. Disabling it before initialization is safe
     // and prevents the first automatic activation from racing runtime consent.
-    if (!facebookWasInitialized && autoLogAppEventsEnabled == false) {
+    if (!facebookWasInitialized && !autoLogAppEventsEnabled) {
       FacebookSdk.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled)
     }
-    if (advertiserIdCollectionEnabled != null) {
-      FacebookSdk.setAdvertiserIDCollectionEnabled(advertiserIdCollectionEnabled)
-    }
+    FacebookSdk.setAdvertiserIDCollectionEnabled(advertiserIdCollectionEnabled)
     if (!FacebookSdk.isInitialized()) {
       FacebookSdk.sdkInitialize(context)
     }
-    if (autoLogAppEventsEnabled != null &&
-      (facebookWasInitialized || autoLogAppEventsEnabled)) {
+    if (facebookWasInitialized || autoLogAppEventsEnabled) {
       FacebookSdk.setAutoLogAppEventsEnabled(autoLogAppEventsEnabled)
     }
-    appEventsLogger = AppEventsLogger.newLogger(context)
+    // Bind explicit events to the runtime App ID even if a host application
+    // manually initialized Meta before this plugin was configured.
+    appEventsLogger = AppEventsLogger.newLogger(context, appId)
     anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(context)
     configuredFromDart = true
 
     val shouldActivateCurrentActivity =
-      (!facebookInitializedAtPluginAttach || !autoLogEnabledAtPluginAttach) &&
+      (!facebookWasInitialized || previousAppId != appId || !autoLogWasEnabled) &&
       !activatedAfterDeferredInitialization &&
       resumedActivityCount > 0 &&
-      (autoLogAppEventsEnabled ?: FacebookSdk.getAutoLogAppEventsEnabled())
+      autoLogAppEventsEnabled
     if (shouldActivateCurrentActivity) {
       val app = application
       if (app != null) {

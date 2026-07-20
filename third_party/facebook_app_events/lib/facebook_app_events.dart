@@ -76,8 +76,9 @@ class FacebookAppEvents {
 
   /// Configures the native Facebook SDK before event logging.
   ///
-  /// Use this when the app id and client token are loaded at runtime instead
-  /// of being declared in AndroidManifest.xml or Info.plist.
+  /// Runtime values are authoritative over credentials and switches left in
+  /// AndroidManifest.xml or Info.plist. When either optional switch is omitted,
+  /// the Meta SDK default (`true`) is used.
   Future<void> configure({
     required String appId,
     required String clientToken,

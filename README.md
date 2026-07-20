@@ -2,15 +2,15 @@
 
 `company_analytics` 是项目内统一埋点入口，封装仓库内置的 Facebook App Events 和 Singular Flutter SDK。
 
-当前推荐方案：Facebook app id 和 client token 同时写入宿主原生配置与远程 JSON，使 Meta SDK 能在首个生命周期回调前启动，并让 Dart provider 校验两端凭据一致。Facebook 自动事件开关也建议写入原生配置；远程 JSON 可显式覆盖，省略时保留原生值。Singular key 继续由远程 JSON 下发。
+当前方案以远程 JSON（远程失败时以上一次成功缓存）为 Facebook 配置的唯一事实来源。Facebook App Events 会等 JSON 解析完成后再启动；旧 SDK 留在 Android Manifest/resources 或 iOS Info.plist/xcconfig 中的 app id、client token 和采集开关不会阻止新配置初始化，也不会决定之后的 App Events 路由。
 
-没有原生 Facebook 配置时仍支持运行时初始化，但只能作为兼容路径：Android 会补记已处于前台的首次 activation，iOS 会在 CoreKit 初始化后应用运行时凭据。对自动生命周期、无代码事件和最早发生的 IAP，原生启动期配置仍然最可靠。
+这个取舍优先保证 Facebook 账号或应用配置失效后可以通过 JSON 换号，不保证 JSON 解析完成前的最早自动事件。设备只要成功获取并缓存过新 JSON，后续冷启动在线时使用服务端配置，网络失败时使用该缓存；初始化完成后的自动事件、自定义事件和收入事件都发送到运行时 app id。
 
 ## 版本要求
 
 - Dart: `>=3.8.1 <4.0.0`
 - Flutter: `>=3.38.0`
-- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.1`
+- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.2`
 - Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.2`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
@@ -25,7 +25,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.1.3
+      ref: v0.1.4
 ```
 
 本地开发依赖：
@@ -118,10 +118,10 @@ Facebook 可选开关的解析规则：
 
 | 远程字段 | 省略时 | 显式传值时 |
 | --- | --- | --- |
-| `auto_log_app_events_enabled` | 保留原生 `FacebookAutoLogAppEventsEnabled`；原生也未配置时使用 Meta 默认值 `true` | 覆盖当前原生 SDK 设置 |
-| `advertiser_tracking_enabled` | 保留原生 `FacebookAdvertiserIDCollectionEnabled` | 覆盖当前原生 SDK 设置 |
+| `auto_log_app_events_enabled` | 使用 Meta 默认值 `true` | 使用 JSON 值 |
+| `advertiser_tracking_enabled` | 使用 Meta 默认值 `true` | 使用 JSON 值 |
 
-iOS 原生 auto-log 明确为 `false` 且远程字段省略时，SDK 不会主动调用 `activateApp()`。如果合规策略要求 ATT 状态确定前不采集，请把两个原生开关设为 `false`；远程配置也设为 `false` 或省略 auto-log，除非你明确希望在 ATT 检查完成后重新启用。
+原生工程中的同名开关不再作为回退值。如果合规策略要求禁用某项采集，必须在 JSON 中显式设为 `false`。
 
 每次启动会先请求远程 URL；成功解析后写入本地缓存。网络失败时会使用上一次成功解析的缓存。缓存 metadata 包含 `version`、`sha256`、`source_url`、`cached_at`。
 
@@ -129,7 +129,7 @@ iOS 原生 auto-log 明确为 `false` 且远程字段省略时，SDK 不会主�
 
 ## 初始化
 
-建议在首屏渲染后或业务自定义 ATT 说明弹窗后调用 Dart 初始化。iOS 会在 `initFromRemoteConfig()` 内部请求 ATT，因此不要在 `runApp()` 之前等待系统弹窗。若宿主预置了 Facebook 原生凭据，CoreKit 会提前完成基础启动；需要严格等到 ATT 状态确定后才采集时，请把原生 `FacebookAutoLogAppEventsEnabled` 和 `FacebookAdvertiserIDCollectionEnabled` 都设为 `false`。远程配置显式设为 `true` 会在 ATT 检查结束后启用并补记当前 activation，不会区分用户最终是授权还是拒绝，因此必须由你们的合规策略决定是否启用。
+建议在首屏渲染后或业务自定义 ATT 说明弹窗后调用 Dart 初始化。iOS 会在 `initFromRemoteConfig()` 内部请求 ATT，因此不要在 `runApp()` 之前等待系统弹窗。Facebook App Events 在配置解析和 ATT 检查后启动；是否启用 auto-log 与 advertiser ID collection 只看 JSON。把字段设为 `true` 不会区分用户最终是授权还是拒绝，因此必须由你们的合规策略决定是否启用。
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
@@ -282,47 +282,23 @@ await analytics.track(
 
 ## 平台配置原则
 
-- 生产环境建议在 `Info.plist` / Android resources 中预置 Facebook app id、client token 和两个自动采集开关。
-- app id 和 client token 必须与远程 JSON 当前平台分支一致；Android 和 iOS 检测到凭据不一致都会拒绝初始化，避免自动事件和自定义事件进入不同的 Facebook App。
-- 自动事件开关允许远程配置覆盖；远程字段省略时保留原生设置。
-- 未预置原生值时，SDK 使用兼容的延迟初始化路径。
+- Facebook app id、client token 和两个采集开关只以远程或缓存 JSON 为准。
+- Android 插件会从最终 Manifest 中移除 Meta 的 `FacebookInitProvider`，避免旧 resources/metadata 在 JSON 读取前启动 App Events。
+- iOS 插件不会在注册时用 Info.plist 凭据启动 CoreKit；运行时配置前会抑制旧 app id 的 activation，再绑定 JSON app id。
+- 旧版本生成的 Facebook 凭据可以暂时残留，不会导致 `CONFIG_MISMATCH` 或覆盖 App Events。仍建议业务方便时清理，避免其他直接使用 Meta SDK 的代码误读。
 - Singular api key 和 secret 由远程 JSON 传入。
 - iOS 会在远程配置解析成功后、运行时启用 Facebook 自动采集以及启动 Singular 前检查 ATT；状态为 `notDetermined` 时必定请求系统权限。
 - 宿主 iOS 工程必须在 `Info.plist` 添加 `NSUserTrackingUsageDescription`。
-- 仍需按 Facebook / Singular 官方要求保留宿主工程必要的平台能力配置，例如 install referrer、URL/deep link 能力、混淆规则等。
+- 仍需按 Facebook / Singular 官方要求保留宿主工程必要的平台能力配置，例如 install referrer、URL/deep link 能力、混淆规则等。URL scheme 等构建期能力无法由远程 JSON 替换；如果业务使用 Facebook Login/deep link，换 app id 时仍需发版更新它们。
 
-iOS `Info.plist` 示例：
+iOS 只需保留 ATT 权限说明（如业务需要）：
 
 ```xml
-<key>FacebookAppID</key>
-<string>YOUR_FACEBOOK_APP_ID_IOS</string>
-<key>FacebookClientToken</key>
-<string>YOUR_FACEBOOK_CLIENT_TOKEN_IOS</string>
-<key>FacebookAutoLogAppEventsEnabled</key>
-<true/>
-<key>FacebookAdvertiserIDCollectionEnabled</key>
-<true/>
 <key>NSUserTrackingUsageDescription</key>
 <string>This identifier will be used to deliver personalized ads and attribution analytics.</string>
 ```
 
-Android `res/values/strings.xml`：
-
-```xml
-<string name="facebook_app_id">YOUR_FACEBOOK_APP_ID_ANDROID</string>
-<string name="facebook_client_token">YOUR_FACEBOOK_CLIENT_TOKEN_ANDROID</string>
-```
-
-Android `AndroidManifest.xml` 的 `<application>`：
-
-```xml
-<meta-data android:name="com.facebook.sdk.ApplicationId" android:value="@string/facebook_app_id" />
-<meta-data android:name="com.facebook.sdk.ClientToken" android:value="@string/facebook_client_token" />
-<meta-data android:name="com.facebook.sdk.AutoLogAppEventsEnabled" android:value="true" />
-<meta-data android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled" android:value="true" />
-```
-
-常规接入建议原生开关与远程 JSON 保持一致。若原生阶段必须禁止采集，可以先在原生配置中设为 `false`，再根据合规策略决定远程配置是继续保持禁用，还是在 ATT 检查完成后显式启用。
+不再要求 Android resources/Manifest 或 iOS Info.plist 预填 Facebook 凭据。旧值无需为了本次 SDK 升级强制删除。
 
 ## 旧接入方式
 

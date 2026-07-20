@@ -1,3 +1,10 @@
+## 0.1.4
+
+* Make remote or cached JSON authoritative over legacy native Facebook credentials.
+* Delay Facebook App Events startup until Dart has resolved its runtime configuration.
+* Allow a new Facebook app id and client token to replace values left by older SDK versions.
+* Bind Android and iOS App Events explicitly to the runtime Facebook app id.
+
 ## 0.1.3
 
 * Configure Facebook auto-log and advertiser-id flags atomically with native SDK startup.
