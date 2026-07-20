@@ -8,11 +8,23 @@
 
 ### 1. 添加依赖
 
+内部仓库：
+
 ```yaml
 dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
+      ref: v0.1.4
+```
+
+GitHub 仓库：
+
+```yaml
+dependencies:
+  company_analytics:
+    git:
+      url: https://github.com/drainlin/company_analytics.git
       ref: v0.1.4
 ```
 
