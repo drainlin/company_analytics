@@ -12,7 +12,7 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
     this.clientToken,
     this.autoLogAppEventsEnabled,
     this.advertiserTrackingEnabled,
-    this.testModeEnabled = false,
+    this.debugLoggingEnabled = false,
   }) : _appEvents =
            appEvents ?? AnalyticsSdkSingletons.facebookAppEventsInternal;
 
@@ -21,7 +21,7 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
   final String? clientToken;
   final bool? autoLogAppEventsEnabled;
   final bool? advertiserTrackingEnabled;
-  final bool testModeEnabled;
+  final bool debugLoggingEnabled;
 
   @override
   String get name => 'facebook_app_events';
@@ -44,14 +44,22 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
       clientToken: resolvedClientToken,
       autoLogAppEventsEnabled: autoLogAppEventsEnabled,
       advertiserIdCollectionEnabled: advertiserTrackingEnabled,
+      debugLoggingEnabled: debugLoggingEnabled,
     );
 
-    if (testModeEnabled) {
-      await _appEvents.setDebugLoggingEnabled(true);
-    }
-
-    if (testModeEnabled) {
-      debugPrint('Facebook test mode initialized. appId=$resolvedAppId');
+    if (debugLoggingEnabled) {
+      final diagnostics = await _appEvents.getDiagnostics();
+      debugPrint('[CompanyAnalytics][Facebook] configured: $diagnostics');
+      await _appEvents.logEvent(
+        name: 'company_analytics_diagnostic',
+        parameters: const <String, dynamic>{'source': 'facebook_debug_logging'},
+      );
+      await _appEvents.flush();
+      debugPrint(
+        '[CompanyAnalytics][Facebook] control event queued and flush requested. '
+        'Look for FBSDK AppEvents/network logs and a POST whose path ends in '
+        '/activities. A successful MethodChannel call is not a delivery receipt.',
+      );
     }
   }
 
@@ -85,7 +93,7 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
       );
     }
 
-    if (testModeEnabled) {
+    if (debugLoggingEnabled) {
       await _appEvents.flush();
     }
   }

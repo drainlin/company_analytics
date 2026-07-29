@@ -1,3 +1,12 @@
+## 0.30.2+company.3
+
+- Fix iOS Profile/Release initialization ordering by applying runtime
+  credentials and App Events switches before Meta CoreKit starts.
+- Add a safe native configuration snapshot and diagnostic logs for
+  configuration, queued events, purchases, activation, and flush requests.
+- Enable Meta App Events and network-request logging from `configure`; an
+  omitted `debugLoggingEnabled` defaults to `!kReleaseMode`.
+
 ## 0.30.2+company.2
 
 - Make runtime Facebook credentials authoritative over legacy Manifest/Info.plist values.

@@ -5,6 +5,7 @@ import 'package:company_analytics/company_analytics.dart';
 import 'package:company_analytics/src/providers/facebook_provider.dart';
 import 'package:company_analytics/src/providers/singular_provider.dart';
 import 'package:facebook_app_events/facebook_app_events.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:singular_flutter_sdk/singular.dart';
@@ -119,6 +120,103 @@ void main() {
       expect(
         analytics.lastRemoteConfigResult?.source,
         RemoteAnalyticsConfigSource.remote,
+      );
+    });
+
+    test(
+      'defaults Facebook debug logging to enabled outside release mode',
+      () async {
+        const channel = MethodChannel(channelName);
+        final calls = <MethodCall>[];
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'getDiagnostics') {
+            return <String, dynamic>{'configuredFromDart': true};
+          }
+          return null;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+        final analytics = CompanyAnalytics(
+          trackingAuthorizationRequester:
+              _RecordingTrackingAuthorizationRequester(<String>[]),
+        );
+        await analytics.initFromRemoteConfig(
+          RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+          loader: RemoteAnalyticsConfigLoader(
+            httpClient: _FakeConfigHttpClient(_facebookOnlyRemoteJson),
+            cache: _MemoryConfigCache(),
+            platform: TargetPlatform.iOS,
+          ),
+        );
+
+        final configure = calls.singleWhere(
+          (call) => call.method == 'configure',
+        );
+        expect(
+          (configure.arguments as Map<Object?, Object?>)['debugLoggingEnabled'],
+          !kReleaseMode,
+        );
+        expect(
+          calls.any((call) => call.method == 'getDiagnostics'),
+          !kReleaseMode,
+        );
+      },
+    );
+
+    test('allows Facebook debug logging to be explicitly disabled', () async {
+      const channel = MethodChannel(channelName);
+      final calls = <MethodCall>[];
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        return null;
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      final analytics = CompanyAnalytics(
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_facebookOnlyRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        ),
+        facebookDebugLoggingEnabled: false,
+      );
+
+      final configure = calls.singleWhere((call) => call.method == 'configure');
+      expect(
+        (configure.arguments as Map<Object?, Object?>)['debugLoggingEnabled'],
+        isFalse,
+      );
+      expect(
+        calls.where(
+          (call) =>
+              call.method == 'getDiagnostics' ||
+              call.method == 'logEvent' ||
+              call.method == 'flush',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('rejects both Facebook debug logging parameter names', () async {
+      final analytics = CompanyAnalytics();
+
+      await expectLater(
+        analytics.initFromRemoteConfig(
+          RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+          facebookDebugLoggingEnabled: true,
+          facebookTestModeEnabled: false,
+        ),
+        throwsArgumentError,
       );
     });
 
@@ -634,7 +732,7 @@ void main() {
         clientToken: 'fb_token',
         autoLogAppEventsEnabled: true,
         advertiserTrackingEnabled: false,
-        testModeEnabled: true,
+        debugLoggingEnabled: true,
       );
 
       await provider.initialize();
@@ -644,13 +742,19 @@ void main() {
       expect(appEvents.configuredAutoLogAppEventsEnabled, isTrue);
       expect(appEvents.configuredAdvertiserIdCollectionEnabled, isFalse);
       expect(appEvents.debugLoggingEnabled, isTrue);
+      expect(appEvents.diagnosticsCount, 1);
+      expect(appEvents.lastName, 'company_analytics_diagnostic');
+      expect(appEvents.lastParameters, const <String, dynamic>{
+        'source': 'facebook_debug_logging',
+      });
+      expect(appEvents.flushCount, 1);
     });
 
     test('flushes Facebook events immediately in test mode', () async {
       final appEvents = _RecordingFacebookAppEvents();
       final provider = FacebookAnalyticsProvider(
         appEvents: appEvents,
-        testModeEnabled: true,
+        debugLoggingEnabled: true,
       );
 
       await provider.track(const AnalyticsEvent(name: 'test_event'));
@@ -879,6 +983,36 @@ const String _defaultRemoteJson = '''
 }
 ''';
 
+const String _facebookOnlyRemoteJson = '''
+{
+  "version": 1,
+  "enable_facebook": true,
+  "enable_singular": false,
+  "facebook": {
+    "ios": {
+      "app_id": "fb_app_ios",
+      "client_token": "fb_token_ios"
+    },
+    "android": {
+      "app_id": "fb_app_android",
+      "client_token": "fb_token_android"
+    },
+    "auto_log_app_events_enabled": true,
+    "advertiser_tracking_enabled": true
+  },
+  "singular": {
+    "ios": {
+      "api_key": "",
+      "secret": ""
+    },
+    "android": {
+      "api_key": "",
+      "secret": ""
+    }
+  }
+}
+''';
+
 const String _invalidSingularRemoteJson = '''
 {
   "version": 1,
@@ -1094,6 +1228,7 @@ class _RecordingFacebookAppEvents extends FacebookAppEvents {
   bool? configuredAutoLogAppEventsEnabled;
   bool? configuredAdvertiserIdCollectionEnabled;
   bool? debugLoggingEnabled;
+  int diagnosticsCount = 0;
   int flushCount = 0;
   String? lastName;
   Map<String, dynamic>? lastParameters;
@@ -1107,16 +1242,22 @@ class _RecordingFacebookAppEvents extends FacebookAppEvents {
     required String clientToken,
     bool? autoLogAppEventsEnabled,
     bool? advertiserIdCollectionEnabled,
+    bool? debugLoggingEnabled,
   }) async {
     configuredAppId = appId;
     configuredClientToken = clientToken;
     configuredAutoLogAppEventsEnabled = autoLogAppEventsEnabled;
     configuredAdvertiserIdCollectionEnabled = advertiserIdCollectionEnabled;
+    this.debugLoggingEnabled = debugLoggingEnabled;
   }
 
   @override
-  Future<void> setDebugLoggingEnabled(bool enabled) async {
-    debugLoggingEnabled = enabled;
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    diagnosticsCount += 1;
+    return <String, dynamic>{
+      'configuredFromDart': configuredAppId != null,
+      'debugLoggingEnabled': debugLoggingEnabled,
+    };
   }
 
   @override

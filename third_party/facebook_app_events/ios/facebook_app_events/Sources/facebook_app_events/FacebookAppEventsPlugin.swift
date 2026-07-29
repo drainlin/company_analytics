@@ -10,6 +10,7 @@ import FBSDKCoreKit_Basics
 
 public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeCycleDelegate {
     private var configuredFromDart = false
+    private var debugLoggingEnabled = false
     private var graphApiVersion = "v24.0"
 
     public static func register(with registrar: FlutterPluginRegistrar) {
@@ -89,6 +90,8 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             handleFlush(call, result: result)
         case "getApplicationId":
             handleGetApplicationId(call, result: result)
+        case "getDiagnostics":
+            handleGetDiagnostics(call, result: result)
         case "logEvent":
             handleLogEvent(call, result: result)
         case "logPushNotificationOpen":
@@ -144,18 +147,35 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             arguments["autoLogAppEventsEnabled"] as? Bool ?? true
         let resolvedAdvertiserIdCollectionEnabled =
             arguments["advertiserIdCollectionEnabled"] as? Bool ?? true
+        debugLoggingEnabled =
+            arguments["debugLoggingEnabled"] as? Bool ?? false
 
-        // Runtime JSON is authoritative. Meta's Settings cannot be assigned
-        // before CoreKit configures its dependencies in Debug builds, so block
-        // the stale Info.plist activation, initialize without auto-log, then
-        // replace every event setting with the runtime values below.
+        // Runtime JSON is authoritative. In Profile/Release, inject it before
+        // initialization so Meta's asynchronous domain/server configuration
+        // requests never begin with a nil or stale App ID. Meta deliberately
+        // traps pre-initialization Settings writes in DEBUG builds, so that
+        // configuration keeps the deferred compatibility path.
+#if DEBUG
         UserDefaults.standard.set(false, forKey: "FacebookAutoLogAppEventsEnabled")
         UserDefaults.standard.set(
             resolvedAdvertiserIdCollectionEnabled,
             forKey: "FacebookAdvertiserIDCollectionEnabled"
         )
         ApplicationDelegate.shared.initializeSDK()
+        applyDebugLogging(debugLoggingEnabled)
+#else
+        Settings.shared.appID = appId
+        Settings.shared.clientToken = clientToken
+        Settings.shared.graphAPIVersion = graphApiVersion
+        Settings.shared.isAutoLogAppEventsEnabled = resolvedAutoLogAppEventsEnabled
+        Settings.shared.isAdvertiserIDCollectionEnabled = resolvedAdvertiserIdCollectionEnabled
+        applyDebugLogging(debugLoggingEnabled)
+        ApplicationDelegate.shared.initializeSDK()
+#endif
+        diagnosticLog("Meta SDK initialization requested; applying runtime configuration")
 
+        // Reapply after initialization for both paths. This is required by the
+        // DEBUG compatibility path and is harmless/idempotent elsewhere.
         Settings.shared.appID = appId
         Settings.shared.clientToken = clientToken
         // Override before SDK initialization. Facebook iOS SDK v18.x still defaults
@@ -168,10 +188,30 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         // previous Facebook application.
         AppEvents.shared.loggingOverrideAppID = appId
         configuredFromDart = true
+        diagnosticLog(
+            "configured appId=\(appId) clientTokenPresent=true " +
+            "autoLogAppEventsEnabled=\(resolvedAutoLogAppEventsEnabled) " +
+            "advertiserIdCollectionEnabled=\(resolvedAdvertiserIdCollectionEnabled) " +
+            "graphAPIVersion=\(graphApiVersion) applicationState=\(applicationStateToken())"
+        )
+        diagnosticLog(
+            "automaticPurchaseObserverStatus=notExposedByMetaSDK " +
+            "(requires Meta server configuration implicitPurchaseLoggingEnabled; startup is asynchronous)"
+        )
+        if debugLoggingEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in
+                guard let self, self.configuredFromDart else { return }
+                self.diagnosticLog(
+                    "delayed diagnostic flush requested after server-configuration grace period"
+                )
+                AppEvents.shared.flush()
+            }
+        }
 
         if resolvedAutoLogAppEventsEnabled,
            UIApplication.shared.applicationState == .active {
             AppEvents.shared.activateApp()
+            diagnosticLog("activateApp requested because the application is active")
         }
         result(nil)
     }
@@ -200,6 +240,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         }
 
         AppEvents.shared.activateApp()
+        diagnosticLog("activateApp requested applicationId=\(AppEvents.shared.loggingOverrideAppID ?? Settings.shared.appID ?? "nil")")
         result(nil)
     }
 
@@ -248,12 +289,36 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
 
     private func handleFlush(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard requireConfigured(result) else { return }
+        diagnosticLog("flush requested (request acceptance is not a delivery receipt)")
         AppEvents.shared.flush()
         result(nil)
     }
 
     private func handleGetApplicationId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         result(configuredFromDart ? Settings.shared.appID : nil)
+    }
+
+    private func handleGetDiagnostics(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        let flushBehavior: String
+        switch AppEvents.shared.flushBehavior {
+        case .explicitOnly:
+            flushBehavior = "explicitOnly"
+        default:
+            flushBehavior = "auto"
+        }
+        result([
+            "platform": "ios",
+            "configuredFromDart": configuredFromDart,
+            "appId": configuredFromDart ? Settings.shared.appID as Any : NSNull(),
+            "clientTokenPresent": configuredFromDart && !(Settings.shared.clientToken ?? "").isEmpty,
+            "autoLogAppEventsEnabled": configuredFromDart && Settings.shared.isAutoLogAppEventsEnabled,
+            "advertiserIdCollectionEnabled": configuredFromDart && Settings.shared.isAdvertiserIDCollectionEnabled,
+            "graphApiVersion": graphApiVersion,
+            "flushBehavior": flushBehavior,
+            "debugLoggingEnabled": debugLoggingEnabled,
+            "applicationState": applicationStateToken(),
+            "automaticPurchaseObserverStatus": "notExposedByMetaSDK",
+        ])
     }
 
     private func handleGetAnonymousId(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -282,6 +347,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             AppEvents.shared.logEvent(AppEvents.Name(eventName), parameters: parameters)
         }
 
+        diagnosticLog("event queued name=\(eventName) parameterCount=\(parameters.count)")
         result(nil)
     }
 
@@ -357,6 +423,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         )
 
         AppEvents.shared.logPurchase(amount: amount, currency: currency, parameters: parameters)
+        diagnosticLog("manual purchase queued amount=\(amount) currency=\(currency) parameterCount=\(parameters.count)")
         result(nil)
     }
 
@@ -542,6 +609,13 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
     private func handleSetDebugLoggingEnabled(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
         guard requireConfigured(result) else { return }
         let enabled = call.arguments as? Bool ?? false
+        debugLoggingEnabled = enabled
+        applyDebugLogging(enabled)
+        diagnosticLog("debug logging enabled")
+        result(nil)
+    }
+
+    private func applyDebugLogging(_ enabled: Bool) {
         if enabled {
             Settings.shared.enableLoggingBehavior(.appEvents)
             Settings.shared.enableLoggingBehavior(.networkRequests)
@@ -549,6 +623,23 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             Settings.shared.disableLoggingBehavior(.appEvents)
             Settings.shared.disableLoggingBehavior(.networkRequests)
         }
-        result(nil)
+    }
+
+    private func diagnosticLog(_ message: String) {
+        guard debugLoggingEnabled else { return }
+        print("[FacebookAppEvents][iOS] \(message)")
+    }
+
+    private func applicationStateToken() -> String {
+        switch UIApplication.shared.applicationState {
+        case .active:
+            return "active"
+        case .inactive:
+            return "inactive"
+        case .background:
+            return "background"
+        @unknown default:
+            return "unknown"
+        }
     }
 }

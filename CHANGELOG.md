@@ -1,3 +1,16 @@
+## 0.1.5
+
+* Fix iOS Profile/Release runtime Facebook configuration order so Meta starts
+  with the resolved App ID and client token instead of issuing `apps/(null)`
+  initialization requests.
+* Add opt-in Facebook configuration, event-queue, flush, and native network
+  diagnostics with a control event for end-to-end delivery verification.
+* Add `facebookDebugLoggingEnabled`; omitted values default to
+  `!kReleaseMode` (enabled in Debug/Profile and disabled in Release).
+* Keep `facebookTestModeEnabled` as a deprecated compatibility alias.
+* Document the required exact `in_app_purchase: 3.2.4` pin while Facebook
+  automatic IAP reporting is incompatible with Google Play Billing v8.
+
 ## 0.1.4
 
 * Make remote or cached JSON authoritative over legacy native Facebook credentials.

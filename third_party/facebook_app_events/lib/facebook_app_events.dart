@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import 'src/enums.dart';
@@ -78,21 +79,39 @@ class FacebookAppEvents {
   ///
   /// Runtime values are authoritative over credentials and switches left in
   /// AndroidManifest.xml or Info.plist. When either optional switch is omitted,
-  /// the Meta SDK default (`true`) is used.
+  /// the Meta SDK default (`true`) is used. When [debugLoggingEnabled] is
+  /// omitted, App Events and native network diagnostics default to enabled in
+  /// Debug/Profile (`!kReleaseMode`) and disabled in Release.
   Future<void> configure({
     required String appId,
     required String clientToken,
     bool? autoLogAppEventsEnabled,
     bool? advertiserIdCollectionEnabled,
+    bool? debugLoggingEnabled,
   }) {
     return _channel.invokeMethod<void>('configure', <String, dynamic>{
       'appId': appId,
       'clientToken': clientToken,
+      'debugLoggingEnabled': debugLoggingEnabled ?? !kReleaseMode,
       if (autoLogAppEventsEnabled != null)
         'autoLogAppEventsEnabled': autoLogAppEventsEnabled,
       if (advertiserIdCollectionEnabled != null)
         'advertiserIdCollectionEnabled': advertiserIdCollectionEnabled,
     });
+  }
+
+  /// Returns a safe, non-secret snapshot of the native SDK configuration.
+  ///
+  /// This reports whether the Flutter plugin configured the native SDK and the
+  /// public settings that affect App Events. Meta does not expose whether its
+  /// server-controlled automatic purchase observer is running, so
+  /// `automaticPurchaseObserverStatus` is informational rather than a delivery
+  /// receipt.
+  Future<Map<String, dynamic>> getDiagnostics() async {
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'getDiagnostics',
+    );
+    return result ?? const <String, dynamic>{};
   }
 
   /// Parameter key used to specify a generic content type/family for the logged event, e.g.

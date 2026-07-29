@@ -40,7 +40,7 @@ class CompanyAnalytics {
   RemoteAnalyticsConfigResult? _lastRemoteConfigResult;
   RemoteAnalyticsConfig? _lastRemoteConfig;
   RemoteAnalyticsConfigLoader? _lastRemoteConfigLoader;
-  bool _lastFacebookTestModeEnabled = false;
+  bool _lastFacebookDebugLoggingEnabled = !kReleaseMode;
   Future<void>? _remoteInitAttempt;
   Future<void>? _configInitAttempt;
   Future<void>? _pendingEventsLoadAttempt;
@@ -60,7 +60,7 @@ class CompanyAnalytics {
 
   Future<void> _initFromConfig(
     AnalyticsConfig config, {
-    bool facebookTestModeEnabled = false,
+    required bool facebookDebugLoggingEnabled,
   }) {
     if (_isInitialized) {
       return Future<void>.value();
@@ -73,7 +73,7 @@ class CompanyAnalytics {
 
     final attempt = _performInitFromConfig(
       config,
-      facebookTestModeEnabled: facebookTestModeEnabled,
+      facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
     );
     _configInitAttempt = attempt;
     return attempt.whenComplete(() {
@@ -85,7 +85,7 @@ class CompanyAnalytics {
 
   Future<void> _performInitFromConfig(
     AnalyticsConfig config, {
-    bool facebookTestModeEnabled = false,
+    required bool facebookDebugLoggingEnabled,
   }) async {
     await _ensurePendingEventsLoaded();
     final errors = config.validate(
@@ -103,7 +103,7 @@ class CompanyAnalytics {
           _customProviders ??
           _buildDefaultProviders(
             config,
-            facebookTestModeEnabled: facebookTestModeEnabled,
+            facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
           );
 
       for (final provider in _providers) {
@@ -135,7 +135,11 @@ class CompanyAnalytics {
   Future<void> initFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig, {
     RemoteAnalyticsConfigLoader? loader,
-    bool facebookTestModeEnabled = false,
+    bool? facebookDebugLoggingEnabled,
+    @Deprecated(
+      'Use facebookDebugLoggingEnabled. This alias will be removed in a future release.',
+    )
+    bool? facebookTestModeEnabled,
   }) async {
     if (_isInitialized) {
       return;
@@ -148,13 +152,18 @@ class CompanyAnalytics {
     }
 
     final configLoader = loader ?? RemoteAnalyticsConfigLoader();
+    final resolvedFacebookDebugLoggingEnabled =
+        _resolveFacebookDebugLoggingEnabled(
+          facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+          facebookTestModeEnabled: facebookTestModeEnabled,
+        );
     _lastRemoteConfig = remoteConfig;
     _lastRemoteConfigLoader = configLoader;
-    _lastFacebookTestModeEnabled = facebookTestModeEnabled;
+    _lastFacebookDebugLoggingEnabled = resolvedFacebookDebugLoggingEnabled;
     final attempt = _loadAndInitFromRemoteConfig(
       remoteConfig,
       configLoader,
-      facebookTestModeEnabled: facebookTestModeEnabled,
+      facebookDebugLoggingEnabled: resolvedFacebookDebugLoggingEnabled,
     );
     _remoteInitAttempt = attempt;
     try {
@@ -169,13 +178,13 @@ class CompanyAnalytics {
   Future<void> _loadAndInitFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig,
     RemoteAnalyticsConfigLoader configLoader, {
-    bool facebookTestModeEnabled = false,
+    required bool facebookDebugLoggingEnabled,
   }) async {
     final result = await configLoader.loadResult(remoteConfig);
     _lastRemoteConfigResult = result;
     await _initFromConfig(
       result.config,
-      facebookTestModeEnabled: facebookTestModeEnabled,
+      facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
     );
   }
 
@@ -247,7 +256,7 @@ class CompanyAnalytics {
       await initFromRemoteConfig(
         _lastRemoteConfig!,
         loader: _lastRemoteConfigLoader,
-        facebookTestModeEnabled: _lastFacebookTestModeEnabled,
+        facebookDebugLoggingEnabled: _lastFacebookDebugLoggingEnabled,
       );
     } catch (_) {
       // The caller falls back to queueing or fail-fast behavior.
@@ -379,7 +388,7 @@ class CompanyAnalytics {
 
   static List<AnalyticsProvider> _buildDefaultProviders(
     AnalyticsConfig config, {
-    bool facebookTestModeEnabled = false,
+    required bool facebookDebugLoggingEnabled,
   }) {
     final providers = <AnalyticsProvider>[];
 
@@ -390,7 +399,7 @@ class CompanyAnalytics {
           clientToken: config.facebookClientToken,
           autoLogAppEventsEnabled: config.facebookAutoLogAppEventsEnabled,
           advertiserTrackingEnabled: config.facebookAdvertiserTrackingEnabled,
-          testModeEnabled: facebookTestModeEnabled,
+          debugLoggingEnabled: facebookDebugLoggingEnabled,
         ),
       );
     }
@@ -407,6 +416,22 @@ class CompanyAnalytics {
     }
 
     return providers;
+  }
+
+  static bool _resolveFacebookDebugLoggingEnabled({
+    required bool? facebookDebugLoggingEnabled,
+    required bool? facebookTestModeEnabled,
+  }) {
+    if (facebookDebugLoggingEnabled != null &&
+        facebookTestModeEnabled != null) {
+      throw ArgumentError(
+        'Pass only facebookDebugLoggingEnabled. '
+        'facebookTestModeEnabled is a deprecated alias.',
+      );
+    }
+    return facebookDebugLoggingEnabled ??
+        facebookTestModeEnabled ??
+        !kReleaseMode;
   }
 }
 

@@ -33,6 +33,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   private var appEventsLogger: AppEventsLogger? = null
   private var anonymousId: String? = null
   private var configuredFromDart = false
+  private var debugLoggingEnabled = false
   private var activatedAfterDeferredInitialization = false
   private var graphApiVersion = "v24.0"
   private var resumedActivityCount = 0
@@ -81,6 +82,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       "clearUserID" -> handleClearUserId(call, result)
       "flush" -> handleFlush(call, result)
       "getApplicationId" -> handleGetApplicationId(call, result)
+      "getDiagnostics" -> handleGetDiagnostics(call, result)
       "logEvent" -> handleLogEvent(call, result)
       "logPushNotificationOpen" -> handlePushNotificationOpen(call, result)
       "setUserID" -> handleSetUserId(call, result)
@@ -118,6 +120,8 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       call.argument<Boolean>("autoLogAppEventsEnabled") ?: true
     val advertiserIdCollectionEnabled =
       call.argument<Boolean>("advertiserIdCollectionEnabled") ?: true
+    debugLoggingEnabled =
+      call.argument<Boolean>("debugLoggingEnabled") ?: false
     if (appId.isNullOrBlank() || clientToken.isNullOrBlank()) {
       result.error("INVALID_ARGUMENT", "Facebook appId and clientToken are required", null)
       return
@@ -132,6 +136,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     // Override before SDK initialization. Facebook Android SDK v18.x still defaults
     // to v16.0, which was removed by Meta on May 14, 2025.
     FacebookSdk.setGraphApiVersion(graphApiVersion)
+    applyDebugLogging(debugLoggingEnabled)
     // Meta 18.x calls getApplicationContext() when enabling auto-log, which
     // requires an initialized SDK. Disabling it before initialization is safe
     // and prevents the first automatic activation from racing runtime consent.
@@ -150,6 +155,16 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     appEventsLogger = AppEventsLogger.newLogger(context, appId)
     anonymousId = AppEventsLogger.getAnonymousAppDeviceGUID(context)
     configuredFromDart = true
+    diagnosticLog(
+      "configured appId=$appId clientTokenPresent=true " +
+        "autoLogAppEventsEnabled=$autoLogAppEventsEnabled " +
+        "advertiserIdCollectionEnabled=$advertiserIdCollectionEnabled " +
+        "graphApiVersion=$graphApiVersion resumedActivityCount=$resumedActivityCount"
+    )
+    diagnosticLog(
+      "automaticPurchaseObserverStatus=notExposedByMetaSDK " +
+        "(requires Meta server configuration; startup is asynchronous)"
+    )
 
     val shouldActivateCurrentActivity =
       (!facebookWasInitialized || previousAppId != appId || !autoLogWasEnabled) &&
@@ -161,6 +176,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       if (app != null) {
         AppEventsLogger.activateApp(app, appId)
         activatedAfterDeferredInitialization = true
+        diagnosticLog("activateApp requested because an activity is resumed")
       }
     }
 
@@ -180,6 +196,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       val applicationId = call.argument("applicationId") as? String
 
       AppEventsLogger.activateApp(application, applicationId)
+      diagnosticLog("activateApp requested applicationId=${applicationId ?: FacebookSdk.getApplicationId()}")
 
       result.success(null)
   }
@@ -240,12 +257,37 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
 
   private fun handleFlush(call: MethodCall, result: Result) {
     val logger = getAppEventsLogger(result) ?: return
+    diagnosticLog("flush requested (request acceptance is not a delivery receipt)")
     logger.flush()
     result.success(null)
   }
 
   private fun handleGetApplicationId(call: MethodCall, result: Result) {
     result.success(if (configuredFromDart) FacebookSdk.getApplicationId() else null)
+  }
+
+  private fun handleGetDiagnostics(call: MethodCall, result: Result) {
+    result.success(
+      mapOf(
+        "platform" to "android",
+        "configuredFromDart" to configuredFromDart,
+        "appId" to if (configuredFromDart) FacebookSdk.getApplicationId() else null,
+        "clientTokenPresent" to
+          (configuredFromDart && FacebookSdk.getClientToken().isNotBlank()),
+        "autoLogAppEventsEnabled" to
+          (configuredFromDart && FacebookSdk.getAutoLogAppEventsEnabled()),
+        "advertiserIdCollectionEnabled" to
+          (configuredFromDart && FacebookSdk.getAdvertiserIDCollectionEnabled()),
+        "graphApiVersion" to graphApiVersion,
+        "flushBehavior" to when (AppEventsLogger.getFlushBehavior()) {
+          AppEventsLogger.FlushBehavior.EXPLICIT_ONLY -> "explicitOnly"
+          else -> "auto"
+        },
+        "debugLoggingEnabled" to debugLoggingEnabled,
+        "resumedActivityCount" to resumedActivityCount,
+        "automaticPurchaseObserverStatus" to "notExposedByMetaSDK"
+      )
+    )
   }
  private fun handleGetAnonymousId(call: MethodCall, result: Result) {
     if (!requireConfigured(result)) return
@@ -316,6 +358,7 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       logger.logEvent(eventName)
     }
 
+    diagnosticLog("event queued name=$eventName parameterCount=${parameters?.size ?: 0}")
     result.success(null)
   }
 
@@ -415,6 +458,10 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
     val parameterBundle = createBundleFromMap(parameters) ?: Bundle()
 
     logger.logPurchase(amount, currency, parameterBundle)
+    diagnosticLog(
+      "manual purchase queued amount=$amount currency=$currencyCode " +
+        "parameterCount=${parameters?.size ?: 0}"
+    )
     result.success(null)
   }
 
@@ -558,6 +605,13 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
   private fun handleSetDebugLoggingEnabled(call: MethodCall, result: Result) {
     if (!requireConfigured(result)) return
     val enabled = call.arguments as? Boolean ?: false
+    debugLoggingEnabled = enabled
+    applyDebugLogging(enabled)
+    diagnosticLog("debug logging enabled")
+    result.success(null)
+  }
+
+  private fun applyDebugLogging(enabled: Boolean) {
     FacebookSdk.setIsDebugEnabled(enabled)
     if (enabled) {
       FacebookSdk.addLoggingBehavior(LoggingBehavior.APP_EVENTS)
@@ -566,6 +620,11 @@ class FacebookAppEventsPlugin: FlutterPlugin, MethodCallHandler {
       FacebookSdk.removeLoggingBehavior(LoggingBehavior.APP_EVENTS)
       FacebookSdk.removeLoggingBehavior(LoggingBehavior.REQUESTS)
     }
-    result.success(null)
+  }
+
+  private fun diagnosticLog(message: String) {
+    if (debugLoggingEnabled) {
+      Log.i(logTag, "[diagnostics] $message")
+    }
   }
 }

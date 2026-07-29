@@ -15,7 +15,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.1.4
+      ref: v0.1.5
 ```
 
 GitHub 仓库：
@@ -25,7 +25,7 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.1.4
+      ref: v0.1.5
 ```
 
 执行：
@@ -33,6 +33,20 @@ dependencies:
 ```bash
 flutter pub get
 ```
+
+### `in_app_purchase` 版本限制
+
+接入本 SDK 的应用必须将 `in_app_purchase` **严格锁定为 `3.2.4`**，
+不能使用 `^3.2.4`、`>=3.2.4` 或其他宽松约束：
+
+```yaml
+dependencies:
+  in_app_purchase: 3.2.4
+```
+
+当前暂不支持升级到 Google Play Billing v8。升级 `in_app_purchase`
+或间接引入 Billing v8，可能导致 Facebook Event SDK 的自动内购/订阅
+事件监听与上报失效。确认 Meta 自动 IAP 兼容 Billing v8 前，请保持该精确版本。
 
 本地开发可以改为：
 
@@ -128,8 +142,6 @@ bash tool/serve_remote_config.sh
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
-import 'package:flutter/foundation.dart';
-
 final CompanyAnalytics analytics = CompanyAnalytics(
   maxPendingEvents: 200,
 );
@@ -145,12 +157,26 @@ Future<void> initAnalytics() async {
       retryDelay: const Duration(milliseconds: 500),
       useCachedConfigOnFailure: true,
     ),
-    facebookTestModeEnabled: kDebugMode,
   );
 }
 ```
 
-推荐在 `runApp()` 后执行，不要为了等待 ATT 弹窗而阻塞 Flutter 首帧。`facebookTestModeEnabled` 只用于本地调试，生产环境必须为 `false`。
+推荐在 `runApp()` 后执行，不要为了等待 ATT 弹窗而阻塞 Flutter 首帧。
+
+Facebook 诊断日志默认使用 `!kReleaseMode`：Debug/Profile 构建开启，
+Release 构建关闭。也可以在初始化时显式覆盖：
+
+```dart
+await analytics.initFromRemoteConfig(
+  remoteConfig,
+  facebookDebugLoggingEnabled: false,
+);
+```
+
+开启后会打印安全配置快照、Meta App Events/网络日志，发送一条
+`company_analytics_diagnostic` 对照事件，并在测试期主动 flush。
+Meta 原生日志可能包含 access token、广告标识符等敏感诊断字段，不应在
+Release 构建中开启。旧参数 `facebookTestModeEnabled` 暂时作为兼容别名保留。
 
 ### 5. 上报事件
 
@@ -324,7 +350,7 @@ if (analytics.droppedPendingEventCount > 0) {
 
 - Dart：`>=3.8.1 <4.0.0`
 - Flutter：`>=3.38.0`
-- Facebook App Events fork：`0.30.2+company.2`
+- Facebook App Events fork：`0.30.2+company.3`
 - Singular Flutter SDK fork：`1.8.0+company.2`
 - App Tracking Transparency：`^2.0.7`
 
