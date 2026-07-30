@@ -1,5 +1,6 @@
 import 'dart:collection';
 
+import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:singular_flutter_sdk/attributes.dart';
@@ -259,6 +260,51 @@ class CompanyAnalytics {
     );
   }
 
+  /// Reports a verified free-trial start to Meta only.
+  ///
+  /// Use this after the store transaction has passed the host application's
+  /// server-side verification. It compensates for Meta automatic purchase
+  /// logging classifying a free trial as a paid subscription. Restored
+  /// subscriptions must not call this method.
+  Future<void> trackFacebookTrialStart({
+    required double subscriptionValue,
+    required String currency,
+    required String subscriptionId,
+    required String transactionId,
+    Map<String, dynamic> attributes = const <String, dynamic>{},
+  }) {
+    _validateRevenue(subscriptionValue, currency);
+    final normalizedSubscriptionId = subscriptionId.trim();
+    if (normalizedSubscriptionId.isEmpty) {
+      throw const AnalyticsEventValidationException(
+        'subscriptionId must not be empty.',
+      );
+    }
+    final normalizedTransactionId = transactionId.trim();
+    if (normalizedTransactionId.isEmpty) {
+      throw const AnalyticsEventValidationException(
+        'transactionId must not be empty.',
+      );
+    }
+
+    return _track(
+      AnalyticsEvent(
+        name: FacebookAppEvents.eventNameStartTrial,
+        parameters: <String, dynamic>{
+          ...attributes,
+          FacebookAppEvents.paramNameContentId: normalizedSubscriptionId,
+          FacebookAppEvents.paramNameContentType: 'subscription',
+          FacebookAppEvents.paramNameOrderId: normalizedTransactionId,
+        },
+        valueToSum: subscriptionValue,
+        revenueCurrency: currency,
+        sendToFacebook: true,
+        sendToSingular: false,
+        sendToCustomProviders: false,
+      ),
+    );
+  }
+
   /// Reports a newly completed non-subscription store purchase to Singular.
   ///
   /// The purchase must have [PurchaseStatus.purchased] and match [product].
@@ -356,7 +402,7 @@ class CompanyAnalytics {
   /// destination selection prevents accidental Facebook duplication.
   @Deprecated(
     'Use trackSingularSubscription, trackSingularTrialStart, '
-    'trackSingularInAppPurchase, or trackCustomEvent.',
+    'trackFacebookTrialStart, trackSingularInAppPurchase, or trackCustomEvent.',
   )
   Future<void> track(AnalyticsEvent event) => _track(event);
 

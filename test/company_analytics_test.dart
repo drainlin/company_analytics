@@ -364,6 +364,64 @@ void main() {
       expect(singular.lastEventName, 'sng_ecommerce_purchase');
     });
 
+    test('fixed Facebook trial event only sends StartTrial to Meta', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final singular = _RecordingSingularSdkFacade();
+      final customProvider = InMemoryAnalyticsProvider();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[
+          FacebookAnalyticsProvider(
+            appEvents: appEvents,
+            appId: 'fb_app',
+            clientToken: 'fb_token',
+          ),
+          SingularAnalyticsProvider(
+            apiKey: 'key',
+            secret: 'secret',
+            enableLogging: false,
+            waitForTrackingAuthSeconds: 0,
+            singular: singular,
+          ),
+          customProvider,
+        ],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.android,
+        ),
+        facebookDebugLoggingEnabled: false,
+      );
+
+      await analytics.trackFacebookTrialStart(
+        subscriptionValue: 13.99,
+        currency: 'SGD',
+        subscriptionId: 'com.example.weekly.trial',
+        transactionId: 'trial_transaction',
+        attributes: const <String, dynamic>{
+          'fb_content_type': 'overridden',
+          'campaign': 'trial_test',
+        },
+      );
+
+      expect(appEvents.lastName, FacebookAppEvents.eventNameStartTrial);
+      expect(appEvents.lastValueToSum, 13.99);
+      expect(appEvents.lastParameters, <String, dynamic>{
+        'fb_content_type': 'subscription',
+        'campaign': 'trial_test',
+        'fb_content_id': 'com.example.weekly.trial',
+        'fb_order_id': 'trial_transaction',
+        FacebookAppEvents.paramNameCurrency: 'SGD',
+      });
+      expect(appEvents.lastPurchaseAmount, isNull);
+      expect(singular.calls, <String>['start']);
+      expect(customProvider.trackedEvents, isEmpty);
+    });
+
     test('custom events require and honor explicit targets', () async {
       final appEvents = _RecordingFacebookAppEvents();
       final singular = _RecordingSingularSdkFacade();

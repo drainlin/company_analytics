@@ -1,3 +1,10 @@
+## 0.2.1
+
+* Add `trackFacebookTrialStart()` for verified free trials that Meta automatic
+  purchase logging incorrectly classifies as paid subscriptions.
+* Route the corrective `StartTrial` event to Facebook only with protected
+  product, order, value, and currency parameters.
+
 ## 0.2.0
 
 * Keep Facebook automatic App Events and automatic purchase tracking unchanged.

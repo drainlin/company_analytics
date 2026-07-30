@@ -250,6 +250,25 @@ await analytics.initFromRemoteConfig(
 
 ## 业务打点
 
+### Meta 免费试用纠正
+
+Meta Android 自动内购可能把免费试用识别成付费 `Subscribe`。宿主完成服务端校验后，
+对确认属于免费试用的新交易调用固定方法补发正确的 `StartTrial`：
+
+```dart
+await analytics.trackFacebookTrialStart(
+  subscriptionValue: 13.99,
+  currency: 'SGD',
+  subscriptionId: 'premium_weekly_trial',
+  transactionId: 'transaction_123',
+);
+```
+
+该方法只发送给 Facebook，不会发送给 Singular 或自定义 provider。SDK 会固定写入
+`fb_content_id`、`fb_content_type=subscription`、`fb_order_id`、金额和币种，调用方
+传入的 `attributes` 不能覆盖这些关键字段。只在新试用通过业务服务端校验后调用，
+恢复购买时不要调用。
+
 ### Singular 三个固定方法
 
 正常业务只使用下列三个方法。三个方法都只发送给 Singular，不会调用 Facebook
