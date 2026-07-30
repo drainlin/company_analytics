@@ -43,6 +43,22 @@ Manifest metadata and iOS Info.plist. On Android the fork removes Meta's
 manifest auto-init provider; on iOS it waits for `configure` before starting
 CoreKit. If either optional switch is omitted, it defaults to `true`.
 
+#### Testing automatic purchases on iOS
+
+Use a **Profile** or **Release** build to validate Meta automatic purchase and
+subscription events:
+
+```bash
+flutter run --profile
+```
+
+Facebook SDK 18.x prevents this runtime-configured fork from writing the App ID
+and client token before CoreKit startup in an iOS Debug build. Applying them
+after startup keeps ordinary manual App Events available, but does not reliably
+start Meta's automatic StoreKit observer. Do not treat missing automatic IAP
+events in Debug as a delivery failure. In Profile or Release, confirm that the
+event has `_implicitlyLogged = 1` and `/activities` returns success.
+
 Facebook Login, URL schemes, deep links, and other build-time capabilities are
 outside App Events runtime configuration. Add or update those native entries
 only when the host app uses the corresponding feature.

@@ -2,6 +2,8 @@
 
 - Fix iOS Profile/Release initialization ordering by applying runtime
   credentials and App Events switches before Meta CoreKit starts.
+- Report the iOS Debug automatic-IAP limitation in diagnostics and require
+  Profile or Release builds when validating automatic purchase delivery.
 - Add a safe native configuration snapshot and diagnostic logs for
   configuration, queued events, purchases, activation, and flush requests.
 - Enable Meta App Events and network-request logging from `configure`; an

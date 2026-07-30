@@ -149,12 +149,13 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             arguments["advertiserIdCollectionEnabled"] as? Bool ?? true
         debugLoggingEnabled =
             arguments["debugLoggingEnabled"] as? Bool ?? false
-
         // Runtime JSON is authoritative. In Profile/Release, inject it before
         // initialization so Meta's asynchronous domain/server configuration
         // requests never begin with a nil or stale App ID. Meta deliberately
-        // traps pre-initialization Settings writes in DEBUG builds, so that
-        // configuration keeps the deferred compatibility path.
+        // traps pre-initialization Settings writes in DEBUG builds. The
+        // deferred DEBUG path keeps manual events usable, but cannot reliably
+        // start Meta's automatic StoreKit observer. Validate automatic iOS
+        // purchase/subscription events in Profile or Release.
 #if DEBUG
         UserDefaults.standard.set(false, forKey: "FacebookAutoLogAppEventsEnabled")
         UserDefaults.standard.set(
@@ -163,6 +164,10 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         )
         ApplicationDelegate.shared.initializeSDK()
         applyDebugLogging(debugLoggingEnabled)
+        diagnosticLog(
+            "WARNING: automatic iOS purchase/subscription events are not a " +
+            "supported Debug test signal; use a Profile or Release build."
+        )
 #else
         Settings.shared.appID = appId
         Settings.shared.clientToken = clientToken
@@ -306,6 +311,12 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
         default:
             flushBehavior = "auto"
         }
+#if DEBUG
+        let automaticPurchaseObserverStatus =
+            "unsupportedInDebugUseProfileOrRelease"
+#else
+        let automaticPurchaseObserverStatus = "notExposedByMetaSDK"
+#endif
         result([
             "platform": "ios",
             "configuredFromDart": configuredFromDart,
@@ -317,7 +328,7 @@ public class FacebookAppEventsPlugin: NSObject, FlutterPlugin, FlutterSceneLifeC
             "flushBehavior": flushBehavior,
             "debugLoggingEnabled": debugLoggingEnabled,
             "applicationState": applicationStateToken(),
-            "automaticPurchaseObserverStatus": "notExposedByMetaSDK",
+            "automaticPurchaseObserverStatus": automaticPurchaseObserverStatus,
         ])
     }
 

@@ -248,6 +248,30 @@ await analytics.initFromRemoteConfig(
 `company_analytics_diagnostic` 对照事件。原生日志可能包含 Token 或广告标识符，
 不要在 Release 开启。
 
+### Facebook 自动事件测试
+
+验证 Facebook 自动内购和订阅事件时，iOS 必须使用 **Profile** 或
+**Release** 构建，不要使用 Debug 构建作验收结论：
+
+```bash
+flutter run --profile
+```
+
+iOS Facebook SDK 18.x 在 Debug 下不允许本包于 CoreKit 初始化前写入远程配置
+提供的 App ID 和 Client Token。初始化后再补写虽然可以保留普通手动事件，但
+Meta 的服务端配置请求可能已经使用空 App ID，自动 StoreKit 观察器不会可靠启动。
+因此 Debug 下没有自动购买事件，不代表 Profile/Release 也存在问题。
+
+验收时应确认：
+
+- Meta 配置请求包含正确 App ID，没有 `apps/(null)`。
+- 自动事件包含 `_implicitlyLogged = 1`。
+- 内购生成 `fb_mobile_purchase`，订阅生成 `Subscribe`、`StartTrial` 或相应恢复事件。
+- `/activities` 最终返回 `200` 和 `success = 1`。
+
+Android 没有这个 iOS Debug 初始化限制；为了使测试构建与正式构建更接近，也建议
+使用 Profile 或 Release 验证 Facebook 自动事件。
+
 ## 业务打点
 
 ### Meta 免费试用纠正
@@ -538,4 +562,6 @@ SDK 不做进程内定时轮询，也不保证正在运行的进程热切换 Fac
 - Singular 后台能分别看到 `sng_subscribe`、`sng_start_trial` 和
   `sng_ecommerce_purchase`。
 - TikTok 映射分别为 `Subscribe`、`StartTrial`、`Purchase`。
+- Facebook 自动内购和订阅已在 Profile 或 Release 构建中验证，未使用 iOS
+  Debug 构建作验收结论。
 - Release 构建未开启 Facebook 或 Singular 调试日志。

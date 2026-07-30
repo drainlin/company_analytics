@@ -4,6 +4,8 @@
   purchase logging incorrectly classifies as paid subscriptions.
 * Route the corrective `StartTrial` event to Facebook only with protected
   product, order, value, and currency parameters.
+* Document the iOS Debug runtime-configuration limitation and require Profile
+  or Release builds when validating Facebook automatic IAP events.
 
 ## 0.2.0
 
