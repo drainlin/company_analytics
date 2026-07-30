@@ -1,3 +1,19 @@
+## 0.2.0
+
+* Keep Facebook automatic App Events and automatic purchase tracking unchanged.
+* Add fixed Singular-only APIs for subscriptions, trial starts, and
+  non-subscription in-app purchases.
+* Use Singular standard events `sng_subscribe`, `sng_start_trial`, and
+  `sng_ecommerce_purchase`.
+* Require explicit Facebook/Singular targets for exceptional custom events.
+* Accept `PurchaseDetails` and `ProductDetails` for Singular IAP validation
+  data while preserving the exact `in_app_purchase: 3.2.4` compatibility pin.
+* Raise the package Dart SDK minimum to 3.10.0 to match
+  `in_app_purchase 3.2.4`.
+* Update the vendored Singular fork to `1.8.0+company.3`, making IAP
+  MethodChannel calls awaitable and protecting purchase verification fields.
+* Deprecate the legacy generic `track(AnalyticsEvent)` entrypoint.
+
 ## 0.1.5
 
 * Fix iOS Profile/Release runtime Facebook configuration order so Meta starts

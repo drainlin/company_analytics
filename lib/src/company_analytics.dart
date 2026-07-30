@@ -1,6 +1,9 @@
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:singular_flutter_sdk/attributes.dart';
+import 'package:singular_flutter_sdk/events.dart';
 
 import 'analytics_config.dart';
 import 'analytics_event.dart';
@@ -188,7 +191,176 @@ class CompanyAnalytics {
     );
   }
 
-  Future<void> track(AnalyticsEvent event) async {
+  /// Reports a new paid subscription to Singular only.
+  ///
+  /// Subscription receipts are intentionally excluded. Restored subscriptions
+  /// must not call this method because they do not represent new revenue.
+  Future<void> trackSingularSubscription({
+    required double amount,
+    required String currency,
+    required String subscriptionId,
+    String? transactionId,
+    Map<String, dynamic> attributes = const <String, dynamic>{},
+  }) {
+    _validateRevenue(amount, currency);
+    final normalizedSubscriptionId = subscriptionId.trim();
+    if (normalizedSubscriptionId.isEmpty) {
+      throw const AnalyticsEventValidationException(
+        'subscriptionId must not be empty.',
+      );
+    }
+    final normalizedTransactionId = transactionId?.trim();
+    if (normalizedTransactionId?.isEmpty ?? false) {
+      throw const AnalyticsEventValidationException(
+        'transactionId must not be empty when provided.',
+      );
+    }
+
+    return _track(
+      AnalyticsEvent(
+        name: Events.sngSubscribe,
+        parameters: <String, dynamic>{
+          ...attributes,
+          Attributes.sngAttrSubscriptionId: normalizedSubscriptionId,
+          Attributes.sngAttrTransactionId: ?normalizedTransactionId,
+        },
+        valueToSum: amount,
+        revenueCurrency: currency,
+        sendToFacebook: false,
+        sendToCustomProviders: false,
+      ),
+    );
+  }
+
+  /// Reports the start of a free trial to Singular only.
+  ///
+  /// Trial starts are standard non-revenue events.
+  Future<void> trackSingularTrialStart({
+    required String transactionId,
+    Map<String, dynamic> attributes = const <String, dynamic>{},
+  }) {
+    final normalizedTransactionId = transactionId.trim();
+    if (normalizedTransactionId.isEmpty) {
+      throw const AnalyticsEventValidationException(
+        'transactionId must not be empty.',
+      );
+    }
+
+    return _track(
+      AnalyticsEvent(
+        name: Events.sngStartTrial,
+        parameters: <String, dynamic>{
+          ...attributes,
+          Attributes.sngAttrTransactionId: normalizedTransactionId,
+        },
+        sendToFacebook: false,
+        sendToCustomProviders: false,
+      ),
+    );
+  }
+
+  /// Reports a newly completed non-subscription store purchase to Singular.
+  ///
+  /// The purchase must have [PurchaseStatus.purchased] and match [product].
+  /// This method does not complete or acknowledge the store transaction.
+  /// Unlike serializable events, purchase receipts are never persisted in the
+  /// SharedPreferences outbox, so analytics must already be initialized.
+  Future<void> trackSingularInAppPurchase({
+    required PurchaseDetails purchase,
+    required ProductDetails product,
+    Map<String, dynamic> attributes = const <String, dynamic>{},
+  }) async {
+    _validateRevenue(product.rawPrice, product.currencyCode);
+    if (purchase.status != PurchaseStatus.purchased) {
+      throw const AnalyticsEventValidationException(
+        'Only newly purchased in-app purchases can be reported to Singular.',
+      );
+    }
+    if (purchase.productID != product.id) {
+      throw const AnalyticsEventValidationException(
+        'Purchase product id must match ProductDetails.id.',
+      );
+    }
+    await _ensurePendingEventsLoaded();
+    if (!_isInitialized) {
+      await _retryRemoteInitIfPossible();
+    }
+    if (!_isInitialized) {
+      throw AnalyticsNotInitializedException(
+        'trackSingularInAppPurchase() called before init().',
+      );
+    }
+    if (_pendingEvents.isNotEmpty) {
+      try {
+        await _drainPendingEvents();
+      } catch (error) {
+        debugPrint(
+          '[company_analytics] Pending event delivery failed and will be retried: $error',
+        );
+      }
+    }
+
+    final providerErrors = <String, Object>{};
+    for (final provider in _providers.whereType<SingularAnalyticsProvider>()) {
+      try {
+        await provider.trackInAppPurchase(
+          purchase,
+          product,
+          attributes: attributes,
+        );
+      } catch (error) {
+        providerErrors[provider.name] = error;
+      }
+    }
+    if (providerErrors.isNotEmpty) {
+      throw AnalyticsDeliveryException(
+        Events.sngEcommercePurchase,
+        providerErrors,
+      );
+    }
+  }
+
+  /// Reports an exceptional custom event to explicitly selected destinations.
+  ///
+  /// Normal purchase, subscription, and trial flows should use the fixed
+  /// Singular methods instead. [targets] must not be empty so Facebook can
+  /// never receive a custom event accidentally.
+  Future<void> trackCustomEvent({
+    required String name,
+    Map<String, dynamic> parameters = const <String, dynamic>{},
+    double? valueToSum,
+    String? revenueCurrency,
+    required Set<AnalyticsTarget> targets,
+  }) {
+    if (targets.isEmpty) {
+      throw const AnalyticsEventValidationException(
+        'At least one custom event target is required.',
+      );
+    }
+    return _track(
+      AnalyticsEvent(
+        name: name,
+        parameters: parameters,
+        valueToSum: valueToSum,
+        revenueCurrency: revenueCurrency,
+        sendToFacebook: targets.contains(AnalyticsTarget.facebook),
+        sendToSingular: targets.contains(AnalyticsTarget.singular),
+        sendToCustomProviders: false,
+      ),
+    );
+  }
+
+  /// Reports a legacy generic event.
+  ///
+  /// Prefer the fixed Singular methods or [trackCustomEvent], whose explicit
+  /// destination selection prevents accidental Facebook duplication.
+  @Deprecated(
+    'Use trackSingularSubscription, trackSingularTrialStart, '
+    'trackSingularInAppPurchase, or trackCustomEvent.',
+  )
+  Future<void> track(AnalyticsEvent event) => _track(event);
+
+  Future<void> _track(AnalyticsEvent event) async {
     event.validate();
     await _ensurePendingEventsLoaded();
     if (!_isInitialized) {
@@ -235,6 +407,19 @@ class CompanyAnalytics {
     }
 
     await _trackToProviders(event);
+  }
+
+  static void _validateRevenue(double amount, String currency) {
+    if (!amount.isFinite || amount <= 0) {
+      throw const AnalyticsEventValidationException(
+        'Revenue amount must be finite and greater than zero.',
+      );
+    }
+    if (!RegExp(r'^[A-Z]{3}$').hasMatch(currency)) {
+      throw const AnalyticsEventValidationException(
+        'Revenue currency must be a three-letter uppercase ISO 4217 code.',
+      );
+    }
   }
 
   Future<void> _retryRemoteInitIfPossible() async {
@@ -286,7 +471,8 @@ class CompanyAnalytics {
           provider is SingularAnalyticsProvider && event.sendToSingular;
       final sendToAllOthers =
           provider is! FacebookAnalyticsProvider &&
-          provider is! SingularAnalyticsProvider;
+          provider is! SingularAnalyticsProvider &&
+          event.sendToCustomProviders;
 
       if (sendToFacebook || sendToSingular || sendToAllOthers) {
         try {

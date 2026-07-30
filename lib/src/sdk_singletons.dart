@@ -1,6 +1,7 @@
 import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:singular_flutter_sdk/singular.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
+import 'package:singular_flutter_sdk/singular_iap.dart';
 
 /// Exposes raw SDK singletons for edge cases.
 ///
@@ -53,6 +54,24 @@ class SingularSdkFacade {
       eventName,
       currency,
       amount,
+      attributes,
+    );
+  }
+
+  /// Reports a verified store purchase to Singular.
+  Future<void> inAppPurchase(String eventName, SingularIAP purchase) {
+    return Singular.inAppPurchase(eventName, purchase);
+  }
+
+  /// Reports a verified store purchase with additional attributes to Singular.
+  Future<void> inAppPurchaseWithAttributes(
+    String eventName,
+    SingularIAP purchase,
+    Map attributes,
+  ) {
+    return Singular.inAppPurchaseWithAttributes(
+      eventName,
+      purchase,
       attributes,
     );
   }

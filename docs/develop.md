@@ -6,13 +6,14 @@
 
 ## 环境要求
 
-- Dart: `>=3.8.1 <4.0.0`
+- Dart: `>=3.10.0 <4.0.0`
 - Flutter: `>=3.38.0`
-- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.2`
-- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.2`
+- Facebook App Events Flutter SDK: 仓库内补丁版本 `0.30.2+company.3`
+- Singular Flutter SDK: 仓库内补丁版本 `1.8.0+company.3`
   - Android Singular SDK: `12.14.0`
   - iOS Singular SDK: `12.12.0`
 - App Tracking Transparency Flutter SDK: `^2.0.7`
+- In App Purchase Flutter SDK: `3.2.4`
 
 ## 远程配置服务
 
@@ -131,14 +132,16 @@ Future<void> initAnalytics() async {
 }
 ```
 
-`facebookTestModeEnabled` 是调试用的本地运行时参数，不写入远程配置。传 `true` 时会在 Facebook SDK 初始化后打开测试/调试日志；不传时默认关闭。
+`facebookTestModeEnabled` 是旧的兼容参数，新代码使用
+`facebookDebugLoggingEnabled`。未显式传值时使用 `!kReleaseMode`：
+Debug/Profile 开启，Release 关闭。
 
 初始化顺序：
 
 1. `RemoteAnalyticsConfigLoader` 请求 URL。
 2. 按当前平台解析 JSON。
 3. 校验 `AnalyticsConfig`。
-4. 宿主存在 Facebook 原生凭据时，CoreKit 已在插件注册阶段启动；否则继续使用运行时兼容路径。
+4. Facebook 等待 Dart 解析运行时凭据，不使用宿主残留的原生凭据提前启动。
 5. iOS 检查 ATT 状态；如果是 `notDetermined`，先请求系统 ATT 权限。
 6. Facebook provider 原子传入 app id、client token、auto-log 和 advertiser ID collection 配置；延迟初始化路径会在需要时补记当前 activation。
 7. Singular provider 使用 runtime key/secret 初始化。
@@ -161,7 +164,11 @@ RemoteAnalyticsConfig(
 
 如果所有远程请求都失败，会再尝试读取上一次成功缓存。没有缓存时才抛出 `AnalyticsInitializationException`。
 
-如果启动阶段初始化失败，`CompanyAnalytics` 会保留最近一次 `RemoteAnalyticsConfig` 和 loader。后续 `track()` 发现还没有成功初始化时，会先立即重试远程初始化；重试成功后上报当前事件，重试失败则按原策略把事件排队，或在 fail-fast 模式下抛 `AnalyticsNotInitializedException`。
+如果启动阶段初始化失败，`CompanyAnalytics` 会保留最近一次
+`RemoteAnalyticsConfig` 和 loader。后续可排队的 Singular 固定事件或自定义
+事件会先立即重试远程初始化；重试成功后上报当前事件，重试失败则按原策略排队，
+或在 fail-fast 模式下抛 `AnalyticsNotInitializedException`。带购买验证数据的
+`trackSingularInAppPurchase()` 不写入 SharedPreferences，未初始化时直接抛错。
 
 ## 缓存与变更检测
 
@@ -213,46 +220,50 @@ Singular api key 和 secret 仍只由远程配置下发。
 
 ## 事件上报
 
-普通事件：
+订阅购买成功，只发 Singular：
 
 ```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'event_page_view',
-    parameters: {
-      'page': 'event_detail',
-      'source': 'push',
-    },
-  ),
+await analytics.trackSingularSubscription(
+  amount: 9.99,
+  currency: 'USD',
+  subscriptionId: 'vip_monthly',
+  transactionId: 'transaction_123',
 );
 ```
 
-收入事件：
+免费试用开始，只发 Singular 且不带收入：
 
 ```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'purchase_success',
-    parameters: {
-      'sku': 'vip_monthly',
-      'channel': 'paywall_a',
-    },
-    valueToSum: 9.99,
-    revenueCurrency: 'USD',
-  ),
+await analytics.trackSingularTrialStart(
+  transactionId: 'transaction_123',
 );
 ```
 
-事件路由：
+非订阅 IAP，只发 Singular：
 
 ```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'fb_only_event',
-    sendToSingular: false,
-  ),
+await analytics.trackSingularInAppPurchase(
+  purchase: purchaseDetails,
+  product: productDetails,
 );
 ```
+
+这个方法使用 `sng_ecommerce_purchase`，根据平台从购买对象中提取 StoreKit
+receipt 或 Google Play `originalJson/signature`。只接受
+`PurchaseStatus.purchased`；不会完成或确认商店交易。
+
+特殊自定义事件必须显式选择目标：
+
+```dart
+await analytics.trackCustomEvent(
+  name: 'special_campaign_event',
+  parameters: const <String, dynamic>{'campaign_id': 'summer_2026'},
+  targets: const <AnalyticsTarget>{AnalyticsTarget.singular},
+);
+```
+
+Facebook 的正常事件和购买事件由 Meta SDK 自动记录。除经过确认的特殊场景外，
+不要把 `AnalyticsTarget.facebook` 加入自定义事件。
 
 登录态：
 
@@ -263,7 +274,15 @@ await analytics.clearUser();
 
 ## 初始化前事件策略
 
-默认策略：`track()` 在 `initFromRemoteConfig()` 完成前被调用时，事件会写入 SharedPreferences 持久队列，初始化成功后补发。事件只有在所有目标 provider 成功后才出队；单个 provider 失败时其他 provider 仍会继续发送，并抛出 `AnalyticsDeliveryException` 供业务监控。队列采用 at-least-once 语义，收入事件应使用稳定订单 ID 去重。默认上限为 200 条，超限丢弃最旧事件并记录在 `droppedPendingEventCount`；补发出队采用单次批量持久化，避免逐条全量重写。
+默认策略：订阅、试用和自定义事件在 `initFromRemoteConfig()` 完成前被调用时，
+会写入 SharedPreferences 持久队列，初始化成功后补发。事件只有在所有目标
+provider 成功后才出队；单个 provider 失败时其他 provider 仍会继续发送，并抛出
+`AnalyticsDeliveryException` 供业务监控。队列采用 at-least-once 语义，
+收入事件应使用稳定交易 ID 去重。默认上限为 200 条，超限丢弃最旧事件并记录在
+`droppedPendingEventCount`；补发出队采用单次批量持久化，避免逐条全量重写。
+
+非订阅 IAP 的 receipt/signature 不进入 SharedPreferences outbox，调用前必须
+初始化成功。
 
 严格模式：
 
@@ -284,7 +303,7 @@ final analytics = CompanyAnalytics(failFastBeforeInit: true);
 事件没有上报：
 
 1. 确认 `initFromRemoteConfig()` 已成功完成。
-2. 确认事件没有被 `sendToFacebook` / `sendToSingular` 路由关闭。
+2. 自定义事件确认 `targets` 包含预期渠道。
 3. 调试环境打开 `singular.enable_logging`。
 4. 检查 Facebook / Singular 平台侧必要能力配置。
 
@@ -301,6 +320,7 @@ final analytics = CompanyAnalytics(failFastBeforeInit: true);
 
 - `CompanyAnalytics`
 - `AnalyticsEvent`
+- `AnalyticsTarget`
 - `AnalyticsProvider`
 - `RemoteAnalyticsConfig`
 - `RemoteAnalyticsConfigLoader`
@@ -311,7 +331,9 @@ final analytics = CompanyAnalytics(failFastBeforeInit: true);
 - `AnalyticsNotInitializedException`
 - `InMemoryAnalyticsProvider`
 
-`AnalyticsSdkSingletons.facebookAppEvents` 和 `AnalyticsSdkSingletons.singular` 仍保留，但已标记 `@Deprecated`。业务代码应优先走 `CompanyAnalytics`。
+`track(AnalyticsEvent)`、`AnalyticsSdkSingletons.facebookAppEvents` 和
+`AnalyticsSdkSingletons.singular` 仍保留，但已标记 `@Deprecated`。业务代码应
+优先使用三个固定 Singular 方法或带显式 targets 的 `trackCustomEvent()`。
 
 ## 旧接入方式
 

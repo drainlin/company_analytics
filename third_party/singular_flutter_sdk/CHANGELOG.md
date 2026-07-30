@@ -1,3 +1,8 @@
+## 1.8.0+company.3
+
+* Make `inAppPurchase` and `inAppPurchaseWithAttributes` awaitable.
+* Keep purchase revenue and receipt fields authoritative over custom attributes.
+
 ## 1.8.0+company.2
 - Complete Flutter method results for initialization, user ID, event, and revenue calls.
 - Return and await those method-channel futures from the Dart API.

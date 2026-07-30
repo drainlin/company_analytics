@@ -8,8 +8,12 @@ import 'package:facebook_app_events/facebook_app_events.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_android/billing_client_wrappers.dart';
 import 'package:singular_flutter_sdk/singular.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
+import 'package:singular_flutter_sdk/singular_iap.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -61,6 +65,19 @@ void main() {
       await expectLater(
         analytics.track(
           const AnalyticsEvent(name: 'purchase_success', valueToSum: 9.99),
+        ),
+        throwsA(isA<AnalyticsEventValidationException>()),
+      );
+    });
+
+    test('rejects non-positive fixed Singular revenue', () {
+      final analytics = CompanyAnalytics();
+
+      expect(
+        () => analytics.trackSingularSubscription(
+          amount: -9.99,
+          currency: 'USD',
+          subscriptionId: 'premium_monthly',
         ),
         throwsA(isA<AnalyticsEventValidationException>()),
       );
@@ -273,6 +290,126 @@ void main() {
 
       expect(requester.requestCount, 1);
       expect(order, <String>['att', 'provider']);
+    });
+
+    test('fixed Singular events never send manual Facebook events', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final singular = _RecordingSingularSdkFacade();
+      final customProvider = InMemoryAnalyticsProvider();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[
+          FacebookAnalyticsProvider(
+            appEvents: appEvents,
+            appId: 'fb_app',
+            clientToken: 'fb_token',
+          ),
+          SingularAnalyticsProvider(
+            apiKey: 'key',
+            secret: 'secret',
+            enableLogging: false,
+            waitForTrackingAuthSeconds: 0,
+            singular: singular,
+          ),
+          customProvider,
+        ],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        ),
+        facebookDebugLoggingEnabled: false,
+      );
+
+      await analytics.trackSingularSubscription(
+        amount: 9.99,
+        currency: 'USD',
+        subscriptionId: 'premium_monthly',
+        transactionId: 'subscription_transaction',
+      );
+      expect(singular.lastEventName, 'sng_subscribe');
+      expect(singular.lastCurrency, 'USD');
+      expect(singular.lastAmount, 9.99);
+      expect(singular.lastArgs, <String, dynamic>{
+        'sng_attr_subscription_id': 'premium_monthly',
+        'sng_attr_transaction_id': 'subscription_transaction',
+      });
+
+      await analytics.trackSingularTrialStart(
+        transactionId: 'trial_transaction',
+      );
+      expect(singular.lastEventName, 'sng_start_trial');
+      expect(singular.lastArgs, <String, dynamic>{
+        'sng_attr_transaction_id': 'trial_transaction',
+      });
+
+      await analytics.trackSingularInAppPurchase(
+        purchase: _appStorePurchaseDetails(),
+        product: _productDetails(),
+      );
+
+      expect(appEvents.lastName, isNull);
+      expect(appEvents.lastPurchaseAmount, isNull);
+      expect(customProvider.trackedEvents, isEmpty);
+      expect(singular.calls, <String>[
+        'start',
+        'customRevenueWithAttributes',
+        'eventWithArgs',
+        'inAppPurchase',
+      ]);
+      expect(singular.lastEventName, 'sng_ecommerce_purchase');
+    });
+
+    test('custom events require and honor explicit targets', () async {
+      final appEvents = _RecordingFacebookAppEvents();
+      final singular = _RecordingSingularSdkFacade();
+      final analytics = CompanyAnalytics(
+        providers: <AnalyticsProvider>[
+          FacebookAnalyticsProvider(
+            appEvents: appEvents,
+            appId: 'fb_app',
+            clientToken: 'fb_token',
+          ),
+          SingularAnalyticsProvider(
+            apiKey: 'key',
+            secret: 'secret',
+            enableLogging: false,
+            waitForTrackingAuthSeconds: 0,
+            singular: singular,
+          ),
+        ],
+        trackingAuthorizationRequester:
+            _RecordingTrackingAuthorizationRequester(<String>[]),
+      );
+      await analytics.initFromRemoteConfig(
+        RemoteAnalyticsConfig(url: Uri.parse('http://127.0.0.1/config.json')),
+        loader: RemoteAnalyticsConfigLoader(
+          httpClient: _FakeConfigHttpClient(_defaultRemoteJson),
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        ),
+        facebookDebugLoggingEnabled: false,
+      );
+
+      expect(
+        () => analytics.trackCustomEvent(
+          name: 'invalid',
+          targets: const <AnalyticsTarget>{},
+        ),
+        throwsA(isA<AnalyticsEventValidationException>()),
+      );
+
+      await analytics.trackCustomEvent(
+        name: 'facebook_exception',
+        targets: const <AnalyticsTarget>{AnalyticsTarget.facebook},
+      );
+
+      expect(appEvents.lastName, 'facebook_exception');
+      expect(singular.calls, <String>['start']);
     });
 
     test(
@@ -881,6 +1018,101 @@ void main() {
       expect(singular.lastArgs, <String, dynamic>{'source': 'tab'});
     });
 
+    test(
+      'reports StoreKit purchases with the Singular standard event',
+      () async {
+        final singular = _RecordingSingularSdkFacade();
+        final provider = SingularAnalyticsProvider(
+          apiKey: 'key',
+          secret: 'secret',
+          enableLogging: false,
+          waitForTrackingAuthSeconds: 0,
+          singular: singular,
+        );
+
+        await provider.trackInAppPurchase(
+          _appStorePurchaseDetails(),
+          _productDetails(),
+          attributes: const <String, dynamic>{'is_first_purchase': true},
+        );
+
+        expect(singular.calls, <String>['inAppPurchaseWithAttributes']);
+        expect(singular.lastEventName, 'sng_ecommerce_purchase');
+        expect(singular.lastPurchase?.toMap, <String, dynamic>{
+          'pcc': 'USD',
+          'r': 4.99,
+          'is_revenue_event': true,
+          'ptr': 'app_store_receipt',
+          'pti': 'purchase_123',
+          'pk': 'coin_pack',
+        });
+        expect(singular.lastArgs, <String, dynamic>{'is_first_purchase': true});
+      },
+    );
+
+    test('reports Google Play purchase validation data', () async {
+      final singular = _RecordingSingularSdkFacade();
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: singular,
+      );
+
+      await provider.trackInAppPurchase(
+        _googlePlayPurchaseDetails(),
+        _productDetails(),
+      );
+
+      expect(singular.calls, <String>['inAppPurchase']);
+      expect(singular.lastEventName, 'sng_ecommerce_purchase');
+      expect(singular.lastPurchase?.toMap, <String, dynamic>{
+        'pcc': 'USD',
+        'r': 4.99,
+        'is_revenue_event': true,
+        'ptr': '{"productId":"coin_pack"}',
+        'receipt': '{"productId":"coin_pack"}',
+        'receipt_signature': 'purchase_signature',
+      });
+    });
+
+    test('rejects restored StoreKit purchases', () async {
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: _RecordingSingularSdkFacade(),
+      );
+
+      await expectLater(
+        provider.trackInAppPurchase(
+          _appStorePurchaseDetails(status: PurchaseStatus.restored),
+          _productDetails(),
+        ),
+        throwsA(isA<AnalyticsEventValidationException>()),
+      );
+    });
+
+    test('rejects non-positive in-app purchase prices', () async {
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: false,
+        waitForTrackingAuthSeconds: 0,
+        singular: _RecordingSingularSdkFacade(),
+      );
+
+      await expectLater(
+        provider.trackInAppPurchase(
+          _appStorePurchaseDetails(),
+          _productDetails(rawPrice: -4.99),
+        ),
+        throwsA(isA<AnalyticsEventValidationException>()),
+      );
+    });
+
     test('propagates Singular platform delivery errors', () async {
       final provider = SingularAnalyticsProvider(
         apiKey: 'key',
@@ -916,6 +1148,69 @@ void main() {
         ),
       );
     });
+
+    test('awaits Singular IAP MethodChannel errors', () async {
+      const channel = MethodChannel('singular-api');
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        throw PlatformException(code: 'iap_delivery_failed');
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      await expectLater(
+        Singular.inAppPurchase(
+          'sng_ecommerce_purchase',
+          SingularIOSIAP(
+            4.99,
+            'USD',
+            'coin_pack',
+            'purchase_123',
+            'app_store_receipt',
+          ),
+        ),
+        throwsA(
+          isA<PlatformException>().having(
+            (error) => error.code,
+            'code',
+            'iap_delivery_failed',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'keeps verified IAP fields authoritative over custom attributes',
+      () async {
+        const channel = MethodChannel('singular-api');
+        MethodCall? recordedCall;
+        final messenger =
+            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+        messenger.setMockMethodCallHandler(channel, (call) async {
+          recordedCall = call;
+          return null;
+        });
+        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+        await Singular.inAppPurchaseWithAttributes(
+          'sng_ecommerce_purchase',
+          SingularIOSIAP(
+            4.99,
+            'USD',
+            'coin_pack',
+            'purchase_123',
+            'app_store_receipt',
+          ),
+          <String, dynamic>{'r': 999, 'pcc': 'BAD', 'campaign': 'summer'},
+        );
+
+        final arguments = recordedCall?.arguments as Map<Object?, Object?>;
+        final attributes = arguments['args'] as Map<Object?, Object?>;
+        expect(attributes['r'], 4.99);
+        expect(attributes['pcc'], 'USD');
+        expect(attributes['campaign'], 'summer');
+      },
+    );
   });
 }
 
@@ -1294,6 +1589,7 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   String? lastCurrency;
   double? lastAmount;
   Map? lastArgs;
+  SingularIAP? lastPurchase;
 
   @override
   Future<void> start(SingularConfig config) async {
@@ -1340,6 +1636,25 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   }
 
   @override
+  Future<void> inAppPurchase(String eventName, SingularIAP purchase) async {
+    calls.add('inAppPurchase');
+    lastEventName = eventName;
+    lastPurchase = purchase;
+  }
+
+  @override
+  Future<void> inAppPurchaseWithAttributes(
+    String eventName,
+    SingularIAP purchase,
+    Map attributes,
+  ) async {
+    calls.add('inAppPurchaseWithAttributes');
+    lastEventName = eventName;
+    lastPurchase = purchase;
+    lastArgs = attributes;
+  }
+
+  @override
   Future<void> setCustomUserId(String customUserId) async {}
 
   @override
@@ -1351,4 +1666,58 @@ class _FailingSingularSdkFacade extends _RecordingSingularSdkFacade {
   Future<void> event(String eventName) async {
     throw StateError('Singular platform delivery failed');
   }
+}
+
+PurchaseDetails _appStorePurchaseDetails({
+  PurchaseStatus status = PurchaseStatus.purchased,
+}) {
+  return PurchaseDetails(
+    purchaseID: 'purchase_123',
+    productID: 'coin_pack',
+    verificationData: PurchaseVerificationData(
+      localVerificationData: 'app_store_receipt',
+      serverVerificationData: 'app_store_receipt',
+      source: 'app_store',
+    ),
+    transactionDate: '1785298962000',
+    status: status,
+  );
+}
+
+ProductDetails _productDetails({double rawPrice = 4.99}) {
+  return ProductDetails(
+    id: 'coin_pack',
+    title: 'Coin Pack',
+    description: '100 coins',
+    price: r'$4.99',
+    rawPrice: rawPrice,
+    currencyCode: 'USD',
+  );
+}
+
+GooglePlayPurchaseDetails _googlePlayPurchaseDetails() {
+  final purchase = PurchaseWrapper(
+    orderId: 'order_123',
+    packageName: 'com.example.app',
+    purchaseTime: 1785298962000,
+    purchaseToken: 'purchase_token',
+    signature: 'purchase_signature',
+    products: <String>['coin_pack'],
+    isAutoRenewing: false,
+    originalJson: '{"productId":"coin_pack"}',
+    isAcknowledged: false,
+    purchaseState: PurchaseStateWrapper.purchased,
+  );
+  return GooglePlayPurchaseDetails(
+    purchaseID: 'order_123',
+    productID: 'coin_pack',
+    verificationData: PurchaseVerificationData(
+      localVerificationData: '{"productId":"coin_pack"}',
+      serverVerificationData: 'purchase_token',
+      source: 'google_play',
+    ),
+    transactionDate: '1785298962000',
+    billingClientPurchase: purchase,
+    status: PurchaseStatus.purchased,
+  );
 }

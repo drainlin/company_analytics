@@ -1,4 +1,8 @@
+import 'package:in_app_purchase/in_app_purchase.dart';
+import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:singular_flutter_sdk/events.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
+import 'package:singular_flutter_sdk/singular_iap.dart';
 
 import '../analytics_event.dart';
 import '../analytics_provider.dart';
@@ -59,6 +63,82 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
     }
 
     await _singular.eventWithArgs(event.name, event.parameters);
+  }
+
+  /// Reports a new non-subscription store purchase with validation data.
+  Future<void> trackInAppPurchase(
+    PurchaseDetails purchase,
+    ProductDetails product, {
+    Map<String, dynamic> attributes = const <String, dynamic>{},
+  }) async {
+    if (purchase.status != PurchaseStatus.purchased) {
+      throw const AnalyticsEventValidationException(
+        'Only newly purchased in-app purchases can be reported to Singular.',
+      );
+    }
+    if (purchase.productID != product.id) {
+      throw const AnalyticsEventValidationException(
+        'Purchase product id must match ProductDetails.id.',
+      );
+    }
+    if (!product.rawPrice.isFinite || product.rawPrice <= 0) {
+      throw const AnalyticsEventValidationException(
+        'In-app purchase price must be finite and greater than zero.',
+      );
+    }
+    if (!RegExp(r'^[A-Z]{3}$').hasMatch(product.currencyCode)) {
+      throw const AnalyticsEventValidationException(
+        'In-app purchase currency must be a three-letter uppercase '
+        'ISO 4217 code.',
+      );
+    }
+
+    final singularPurchase = _buildSingularPurchase(purchase, product);
+    if (attributes.isEmpty) {
+      await _singular.inAppPurchase(
+        Events.sngEcommercePurchase,
+        singularPurchase,
+      );
+      return;
+    }
+    await _singular.inAppPurchaseWithAttributes(
+      Events.sngEcommercePurchase,
+      singularPurchase,
+      attributes,
+    );
+  }
+
+  static SingularIAP _buildSingularPurchase(
+    PurchaseDetails purchase,
+    ProductDetails product,
+  ) {
+    switch (purchase.verificationData.source) {
+      case 'google_play':
+        if (purchase is! GooglePlayPurchaseDetails) {
+          throw const AnalyticsEventValidationException(
+            'Google Play purchases must be GooglePlayPurchaseDetails.',
+          );
+        }
+        return SingularAndroidIAP(
+          product.rawPrice,
+          product.currencyCode,
+          purchase.billingClientPurchase.signature,
+          purchase.billingClientPurchase.originalJson,
+        );
+      case 'app_store':
+        return SingularIOSIAP(
+          product.rawPrice,
+          product.currencyCode,
+          purchase.productID,
+          purchase.purchaseID,
+          purchase.verificationData.serverVerificationData,
+        );
+      default:
+        throw AnalyticsEventValidationException(
+          'Unsupported in-app purchase source: '
+          '${purchase.verificationData.source}.',
+        );
+    }
   }
 
   @override

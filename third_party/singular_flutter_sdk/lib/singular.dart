@@ -27,13 +27,16 @@ class Singular {
   }
 
   static Future<void> eventWithArgs(String eventName, Map args) {
-    return _channel
-        .invokeMethod<void>('eventWithArgs', {'eventName': eventName, 'args': args});
+    return _channel.invokeMethod<void>('eventWithArgs', {
+      'eventName': eventName,
+      'args': args,
+    });
   }
 
   static Future<void> setCustomUserId(String customUserId) {
-    return _channel.invokeMethod<void>(
-        'setCustomUserId', {'customUserId': customUserId});
+    return _channel.invokeMethod<void>('setCustomUserId', {
+      'customUserId': customUserId,
+    });
   }
 
   static Future<void> unsetCustomUserId() {
@@ -41,46 +44,59 @@ class Singular {
   }
 
   static void setDeviceCustomUserId(String customUserId) {
-    _channel
-        .invokeMethod('setDeviceCustomUserId', {'customUserId': customUserId});
+    _channel.invokeMethod('setDeviceCustomUserId', {
+      'customUserId': customUserId,
+    });
   }
 
   static void registerDeviceTokenForUninstall(String deviceToken) {
-    _channel.invokeMethod(
-        'registerDeviceTokenForUninstall', {'deviceToken': deviceToken});
+    _channel.invokeMethod('registerDeviceTokenForUninstall', {
+      'deviceToken': deviceToken,
+    });
   }
 
   static void setFCMDeviceToken(String fcmToken) {
     _channel.invokeMethod('setFCMDeviceToken', {'fcmToken': fcmToken});
   }
 
-// REVENUE
+  // REVENUE
 
   static Future<void> customRevenue(
-      String eventName, String currency, double amount) {
-    return _channel.invokeMethod<void>('customRevenue',
-        {'eventName': eventName, 'currency': currency, 'amount': amount});
+    String eventName,
+    String currency,
+    double amount,
+  ) {
+    return _channel.invokeMethod<void>('customRevenue', {
+      'eventName': eventName,
+      'currency': currency,
+      'amount': amount,
+    });
   }
 
   static Future<void> customRevenueWithAttributes(
-      String eventName, String currency, double amount, Map attributes) {
+    String eventName,
+    String currency,
+    double amount,
+    Map attributes,
+  ) {
     return _channel.invokeMethod<void>('customRevenueWithAttributes', {
       'eventName': eventName,
       'currency': currency,
       'amount': amount,
-      'attributes': attributes
+      'attributes': attributes,
     });
   }
 
   static void customRevenueWithAllAttributes(
-      String eventName,
-      String currency,
-      double amount,
-      String productSKU,
-      String productName,
-      String productCategory,
-      int productQuantity,
-      double productPrice) {
+    String eventName,
+    String currency,
+    double amount,
+    String productSKU,
+    String productName,
+    String productCategory,
+    int productQuantity,
+    double productPrice,
+  ) {
     _channel.invokeMethod('customRevenueWithAllAttributes', {
       'eventName': eventName,
       'currency': currency,
@@ -89,28 +105,35 @@ class Singular {
       'productName': productName,
       'productCategory': productCategory,
       'productQuantity': productQuantity,
-      'productPrice': productPrice
+      'productPrice': productPrice,
     });
   }
 
   static void _setWrapperNameAndVersion(String name, String version) {
-    _channel.invokeMethod(
-        'setWrapperNameAndVersion', {'name': name, 'version': version});
+    _channel.invokeMethod('setWrapperNameAndVersion', {
+      'name': name,
+      'version': version,
+    });
   }
 
   /* Global Properties */
 
   static Future<Map> getGlobalProperties() async {
-    final Map globalProperties =
-        await _channel.invokeMethod('getGlobalProperties');
+    final Map globalProperties = await _channel.invokeMethod(
+      'getGlobalProperties',
+    );
     return globalProperties;
   }
 
   static Future<bool> setGlobalProperty(
-      String key, String value, bool overrideExisting) async {
+    String key,
+    String value,
+    bool overrideExisting,
+  ) async {
     final bool isGlobalPropertySet = await _channel.invokeMethod(
-        'setGlobalProperty',
-        {'key': key, 'value': value, 'overrideExisting': overrideExisting});
+      'setGlobalProperty',
+      {'key': key, 'value': value, 'overrideExisting': overrideExisting},
+    );
     return isGlobalPropertySet;
   }
 
@@ -141,19 +164,22 @@ class Singular {
   }
 
   static Future<bool> isAllTrackingStopped() async {
-    final bool isTrackingStopped =
-        await _channel.invokeMethod('isAllTrackingStopped');
+    final bool isTrackingStopped = await _channel.invokeMethod(
+      'isAllTrackingStopped',
+    );
     return isTrackingStopped;
   }
 
   static void limitDataSharing(bool shouldLimitDataSharing) {
-    _channel.invokeMethod(
-        'limitDataSharing', {'limitDataSharing': shouldLimitDataSharing});
+    _channel.invokeMethod('limitDataSharing', {
+      'limitDataSharing': shouldLimitDataSharing,
+    });
   }
 
   static Future<bool> getLimitDataSharing() async {
-    final bool isLimitDataSharing =
-        await _channel.invokeMethod('getLimitDataSharing');
+    final bool isLimitDataSharing = await _channel.invokeMethod(
+      'getLimitDataSharing',
+    );
     return isLimitDataSharing;
   }
 
@@ -168,24 +194,34 @@ class Singular {
   static Future<bool> skanUpdateConversionValue(int conversionValue) async {
     if (Platform.isIOS) {
       final bool isConversionValueUpdated = await _channel.invokeMethod(
-          'skanUpdateConversionValue', {'conversionValue': conversionValue});
+        'skanUpdateConversionValue',
+        {'conversionValue': conversionValue},
+      );
       return isConversionValueUpdated;
     }
 
     return false;
   }
 
-  static void skanUpdateConversionValues(int conversionValue, int coarse, bool lock) {
+  static void skanUpdateConversionValues(
+    int conversionValue,
+    int coarse,
+    bool lock,
+  ) {
     if (Platform.isIOS) {
-      _channel.invokeMethod(
-          'skanUpdateConversionValues', {'conversionValue': conversionValue, 'coarse': coarse, 'lock': lock});
+      _channel.invokeMethod('skanUpdateConversionValues', {
+        'conversionValue': conversionValue,
+        'coarse': coarse,
+        'lock': lock,
+      });
     }
   }
 
   static Future<num> skanGetConversionValue() async {
     if (Platform.isIOS) {
-      final num conversionValue =
-      await _channel.invokeMethod('skanUpdateConversionValue');
+      final num conversionValue = await _channel.invokeMethod(
+        'skanUpdateConversionValue',
+      );
       return conversionValue;
     }
 
@@ -193,16 +229,21 @@ class Singular {
   }
 
   /* IAP Methods */
-  static void inAppPurchase(String eventName, SingularIAP purchase) {
-    _channel.invokeMethod(
-        'eventWithArgs', {'eventName': eventName, 'args': purchase.toMap});
+  static Future<void> inAppPurchase(String eventName, SingularIAP purchase) {
+    return _channel.invokeMethod<void>('eventWithArgs', {
+      'eventName': eventName,
+      'args': purchase.toMap,
+    });
   }
 
-  static void inAppPurchaseWithAttributes(
-      String eventName, SingularIAP purchase, Map attributes) {
-    _channel.invokeMethod('eventWithArgs', {
+  static Future<void> inAppPurchaseWithAttributes(
+    String eventName,
+    SingularIAP purchase,
+    Map attributes,
+  ) {
+    return _channel.invokeMethod<void>('eventWithArgs', {
       'eventName': eventName,
-      'args': {...purchase.toMap, ...attributes}
+      'args': {...attributes, ...purchase.toMap},
     });
   }
 
@@ -210,22 +251,24 @@ class Singular {
     if (adData == null || !adData.hasRequiredParams()) {
       return;
     }
-    _channel.invokeMethod('eventWithArgs',
-        {'eventName': ADMON_REVENUE_EVENT_NAME, 'args': adData});
+    _channel.invokeMethod('eventWithArgs', {
+      'eventName': ADMON_REVENUE_EVENT_NAME,
+      'args': adData,
+    });
   }
-  
-  static void createReferrerShortLink(String baseLink,
-                                        String referrerName,
-                                        String referrerId,
-                                        Map args,
-                                        ShortLinkCallback shortLinkCallback){
 
-    _channel.invokeMethod('createReferrerShortLink',
-    {
+  static void createReferrerShortLink(
+    String baseLink,
+    String referrerName,
+    String referrerId,
+    Map args,
+    ShortLinkCallback shortLinkCallback,
+  ) {
+    _channel.invokeMethod('createReferrerShortLink', {
       'baseLink': baseLink,
       'referrerName': referrerName,
       'referrerId': referrerId,
-      'args': args
+      'args': args,
     });
 
     singularConfig?.setShortLinkCallback(shortLinkCallback);
@@ -233,18 +276,15 @@ class Singular {
 
   static void handlePushNotification(Map pushNotificationPayload) {
     if (Platform.isIOS) {
-      _channel.invokeMethod('handlePushNotification',
-          {
-            'pushNotificationPayload': pushNotificationPayload
-          });
+      _channel.invokeMethod('handlePushNotification', {
+        'pushNotificationPayload': pushNotificationPayload,
+      });
     }
   }
 
   static void setLimitAdvertisingIdentifiers(bool enabled) {
-    _channel.invokeMethod('setLimitAdvertisingIdentifiers',
-        {
-          'limitAdvertisingIdentifiers': enabled
-        });
+    _channel.invokeMethod('setLimitAdvertisingIdentifiers', {
+      'limitAdvertisingIdentifiers': enabled,
+    });
   }
-
 }

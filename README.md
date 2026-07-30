@@ -1,12 +1,46 @@
 # company_analytics
 
-`company_analytics` 是项目内统一的 Flutter 埋点入口，同时向 Facebook App Events 和 Singular 上报自动事件、自定义事件与收入事件。
+`company_analytics` 是公司 Flutter 应用统一的归因和事件上报入口，目前负责
+Facebook App Events 与 Singular 的初始化、事件路由、远程配置和失败队列。
 
-本项目只使用 Facebook App Events，不使用 Facebook Login、URL Scheme 或 Deep Link。Facebook app id、client token 和采集开关只以远程 JSON 为准；远程请求失败时使用设备上一次成功缓存的 JSON。
+接入时只需要记住三条原则：
 
-## 快速接入
+| 场景 | 正确做法 |
+| --- | --- |
+| Facebook 常规事件、购买和订阅 | 由 Meta SDK 自动记录，业务代码不手动打点 |
+| Singular 订阅、试用和非订阅内购 | 只调用本包提供的三个固定方法 |
+| 特殊自定义事件 | 调用 `trackCustomEvent()`，并显式指定 Facebook、Singular 或两者 |
 
-### 1. 添加依赖
+> Facebook 的自动事件逻辑没有因为手动打点 API 的调整而改变。不要同时向
+> Facebook 手动发送购买或订阅事件，否则可能产生重复收入。
+
+## 数据流与职责边界
+
+| 平台 | 数据来源 | 接入要求 |
+| --- | --- | --- |
+| Facebook | Meta SDK 自动事件 | 宿主接入本包并完成后台配置，业务侧不打常规事件 |
+| Singular | SDK 自动会话 + 三个固定手动事件 | 订阅、试用、非订阅内购分别调用对应方法 |
+| TikTok | Singular 后台事件映射 | 前端不接入 TikTok SDK |
+| Firebase | Firebase SDK 自动事件 | Android 需在 Firebase 后台关联 Google Play |
+
+Singular 可以在后台关联 Facebook，但**不要开启 Revenue Events Postbacks**。
+Facebook 已经通过 Meta SDK 自动采集收入，再接收 Singular 的收入回传会造成收入
+重复。
+
+## 环境与依赖
+
+- Dart：`>=3.10.0 <4.0.0`
+- Flutter：`>=3.38.0`
+- `in_app_purchase`：必须精确锁定为 `3.2.4`
+- Facebook App Events fork：`0.30.2+company.3`
+- Singular Flutter SDK fork：`1.8.0+company.3`
+- App Tracking Transparency：`^2.0.7`
+
+暂不支持 Google Play Billing v8。升级 `in_app_purchase` 或间接引入 Billing v8，
+可能影响 Meta SDK 自动内购和订阅事件。确认 Meta 兼容前，不要使用
+`^3.2.4`、`>=3.2.4` 等宽松约束。
+
+## 安装
 
 内部仓库：
 
@@ -15,7 +49,9 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.1.5
+      ref: v0.2.0
+
+  in_app_purchase: 3.2.4
 ```
 
 GitHub 仓库：
@@ -25,38 +61,61 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.1.5
-```
+      ref: v0.2.0
 
-执行：
-
-```bash
-flutter pub get
-```
-
-### `in_app_purchase` 版本限制
-
-接入本 SDK 的应用必须将 `in_app_purchase` **严格锁定为 `3.2.4`**，
-不能使用 `^3.2.4`、`>=3.2.4` 或其他宽松约束：
-
-```yaml
-dependencies:
   in_app_purchase: 3.2.4
 ```
 
-当前暂不支持升级到 Google Play Billing v8。升级 `in_app_purchase`
-或间接引入 Billing v8，可能导致 Facebook Event SDK 的自动内购/订阅
-事件监听与上报失效。确认 Meta 自动 IAP 兼容 Billing v8 前，请保持该精确版本。
-
-本地开发可以改为：
+本地开发：
 
 ```yaml
 dependencies:
   company_analytics:
     path: ../company_analytics
+
+  in_app_purchase: 3.2.4
 ```
 
-### 2. 配置 iOS ATT 权限说明
+然后执行：
+
+```bash
+flutter pub get
+```
+
+## 平台与运营后台配置
+
+### Facebook
+
+Facebook 使用 SDK 作为数据源，常规事件、内购和订阅全部依赖自动记录。业务代码
+不应再调用 Facebook SDK 手动打这些事件。
+
+iOS 运营配置：
+
+1. 打开 Meta 开发者后台的 **App Settings > Basic**。
+2. 在 **Shared secret** 中填写 App Store Connect 的
+   **App Information > App-Specific Shared Secret**。
+3. 开启 **Log in-app events automatically**。
+
+Android 运营配置：
+
+1. 开启 **Log In-App Purchases Automatically**。
+2. 开启 **Log In-App Subscriptions Automatically**。
+3. 在订阅自动记录的配置弹窗中，上传 Google Cloud Service Account 的密钥
+   JSON 文件。
+
+参考文档：
+
+- [Meta iOS App Events](https://developers.facebook.com/documentation/app-events/getting-started-app-events-ios)
+- [Meta iOS App Shared Secret](https://developers.facebook.com/documentation/app-events/getting-started-app-events-ios/app-shared-secret)
+- [Meta Android App Events](https://developers.facebook.com/documentation/app-events/getting-started-app-events-android)
+- [Meta Android purchase verification](https://developers.facebook.com/documentation/app-events/getting-started-app-events-android/verification)
+- [同时使用 Facebook SDK 与 Singular SDK](https://support.singular.net/hc/en-us/articles/360030530092-Using-the-Facebook-SDK-and-Singular-SDK-S2S-in-the-Same-App)
+
+Facebook App ID、Client Token 和自动采集开关由远程 JSON 提供。宿主不需要在
+iOS `Info.plist` 或 Android Manifest/resources 中新增 Facebook App ID 和
+Client Token，也不需要 Facebook Login、URL Scheme 或 Deep Link 配置。
+
+### iOS ATT
 
 iOS 宿主的 `Info.plist` 必须包含：
 
@@ -65,13 +124,27 @@ iOS 宿主的 `Info.plist` 必须包含：
 <string>This identifier will be used for attribution analytics.</string>
 ```
 
-不需要在 iOS `Info.plist` 或 Android Manifest/resources 中配置 Facebook app id 和 client token。旧 SDK 生成的 Facebook 配置可以暂时残留，本 SDK 不会使用它们初始化或路由 App Events。
+SDK 会在远程配置解析成功后、Facebook 和 Singular 启动前请求 ATT。建议在首屏
+渲染后或应用自己的 ATT 说明弹窗后初始化，不要阻塞 Flutter 首帧。
 
-Android 不需要添加 Facebook 专用的 app id、client token、Login 或 Deep Link 配置。
+### TikTok
 
-### 3. 创建远程 JSON
+前端不接入 TikTok SDK，在 Singular 后台配置事件映射：
 
-iOS 和 Android 共用一个 JSON，通过平台分支保存各自的凭据：
+| Singular 官方标准事件 | 实际事件值 | TikTok 事件 |
+| --- | --- | --- |
+| `EVENT_SNG_SUBSCRIBE` | `sng_subscribe` | `Subscribe` |
+| `EVENT_SNG_START_TRIAL` | `sng_start_trial` | `StartTrial` |
+| `EVENT_SNG_ECOMMERCE_PURCHASE` | `sng_ecommerce_purchase` | `Purchase` |
+
+### Firebase
+
+Firebase 继续使用其 SDK 自动记录。Android 应在 Firebase 后台
+**Project Settings > Integration** 中关联 Google Play。
+
+## 远程配置
+
+iOS 和 Android 共用一个 JSON，通过平台字段保存各自凭据：
 
 ```json
 {
@@ -105,29 +178,26 @@ iOS 和 Android 共用一个 JSON，通过平台分支保存各自的凭据：
 }
 ```
 
-字段规则：
+字段要求：
 
-| 字段 | 推荐值或规则 |
+| 字段 | 规则 |
 | --- | --- |
-| `version` | 每次修改配置时递增，便于排查，不参与 SDK 的版本比较 |
-| `enable_facebook` | 生产环境保持 `true`；更换 Facebook 账号时不要关闭，只替换凭据 |
-| `enable_singular` | 生产环境保持 `true` |
-| `facebook.ios/android.app_id` | 对应平台当前有效的 Facebook App ID |
-| `facebook.ios/android.client_token` | 必须和对应 App ID 属于同一个 Facebook App |
-| `auto_log_app_events_enabled` | 推荐显式填写；需要自动事件时设为 `true` |
-| `advertiser_tracking_enabled` | 按隐私合规策略显式填写，不建议依赖默认值 |
-| `singular.enable_logging` | 生产环境设为 `false`，仅调试时开启 |
-| `singular.wait_for_tracking_auth_seconds` | iOS 等待 ATT 的时间，推荐 `15` |
+| `version` | 每次修改时递增，用于排查；不参与 SDK 版本比较 |
+| `enable_facebook` | 生产环境通常为 `true`；换号时替换凭据，不要关闭自动采集 |
+| `enable_singular` | 生产环境通常为 `true` |
+| `facebook.ios/android.app_id` | 对应平台有效的 Facebook App ID |
+| `facebook.ios/android.client_token` | 必须与对应 App ID 属于同一个 Facebook App |
+| `auto_log_app_events_enabled` | 设为 `true`，保持 Facebook 自动事件 |
+| `advertiser_tracking_enabled` | 按隐私合规策略显式设置 |
+| `singular.enable_logging` | 仅调试时为 `true`，生产环境为 `false` |
+| `singular.wait_for_tracking_auth_seconds` | iOS 等待 ATT 的秒数，推荐 `15` |
 
-如果 Facebook 或 Singular 的必填值仍是 `YOUR_...` 占位符，SDK 会把对应 provider 视为未配置并跳过初始化。生产 JSON 不应保留占位符。
+如果必填值仍为 `YOUR_...` 占位符，SDK 会将对应 provider 视为未配置并跳过。
+生产 JSON 不应保留占位符。
 
-配置服务 URL 格式：
-
-```text
-https://config.example.com/<app>/<file>.json
-```
-
-本地联调可编辑 [analytics.remote.dev.json](/Users/yulin/Projects/event_manager/config/analytics.remote.dev.json)，然后启动：
+本地联调可以编辑
+[config/analytics.remote.dev.json](/Users/yulin/Projects/event_manager/config/analytics.remote.dev.json)，
+然后执行：
 
 ```bash
 bash tool/serve_remote_config.sh
@@ -136,12 +206,13 @@ bash tool/serve_remote_config.sh
 - iOS Simulator：`http://127.0.0.1:8765/analytics.remote.dev.json`
 - Android Emulator：`http://10.0.2.2:8765/analytics.remote.dev.json`
 
-### 4. 创建单例并初始化
+## 初始化
 
-整个应用只创建一个 `CompanyAnalytics` 实例。在首屏渲染后或自定义 ATT 说明弹窗后调用一次初始化：
+应用进程内只创建一个 `CompanyAnalytics` 实例：
 
 ```dart
 import 'package:company_analytics/company_analytics.dart';
+
 final CompanyAnalytics analytics = CompanyAnalytics(
   maxPendingEvents: 200,
 );
@@ -161,10 +232,10 @@ Future<void> initAnalytics() async {
 }
 ```
 
-推荐在 `runApp()` 后执行，不要为了等待 ATT 弹窗而阻塞 Flutter 首帧。
+推荐在 `runApp()` 后调用一次 `initAnalytics()`。SDK 只在初始化时请求远程配置，
+不会后台轮询。
 
-Facebook 诊断日志默认使用 `!kReleaseMode`：Debug/Profile 构建开启，
-Release 构建关闭。也可以在初始化时显式覆盖：
+Facebook 诊断日志默认在 Debug/Profile 开启、Release 关闭，也可以显式覆盖：
 
 ```dart
 await analytics.initFromRemoteConfig(
@@ -173,140 +244,233 @@ await analytics.initFromRemoteConfig(
 );
 ```
 
-开启后会打印安全配置快照、Meta App Events/网络日志，发送一条
-`company_analytics_diagnostic` 对照事件，并在测试期主动 flush。
-Meta 原生日志可能包含 access token、广告标识符等敏感诊断字段，不应在
-Release 构建中开启。旧参数 `facebookTestModeEnabled` 暂时作为兼容别名保留。
+开启后会输出配置快照和 Meta 诊断日志，并发送
+`company_analytics_diagnostic` 对照事件。原生日志可能包含 Token 或广告标识符，
+不要在 Release 开启。
 
-### 5. 上报事件
+## 业务打点
 
-所有 SDK 调用都必须 `await`：
+### Singular 三个固定方法
+
+正常业务只使用下列三个方法。三个方法都只发送给 Singular，不会调用 Facebook
+手动事件 API，也不会转发给注入的自定义 provider。
+
+| 业务场景 | Singular 官方常量 | 实际事件名 | 本包方法 |
+| --- | --- | --- | --- |
+| 订阅购买成功 | `EVENT_SNG_SUBSCRIBE` | `sng_subscribe` | `trackSingularSubscription()` |
+| 免费试用开始 | `EVENT_SNG_START_TRIAL` | `sng_start_trial` | `trackSingularTrialStart()` |
+| 非订阅内购成功 | `EVENT_SNG_ECOMMERCE_PURCHASE` | `sng_ecommerce_purchase` | `trackSingularInAppPurchase()` |
+
+这里的 `EVENT_SNG_ECOMMERCE_PURCHASE` 是 Singular 文档中的常量名，SDK 实际
+上传的事件值是 `sng_ecommerce_purchase`。
+
+#### 1. 订阅购买成功
 
 ```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'view_content',
-    parameters: {
-      'content_id': 'article_123',
-      'source': 'home',
-    },
-  ),
+await analytics.trackSingularSubscription(
+  amount: 9.99,
+  currency: 'USD',
+  subscriptionId: 'premium_monthly',
+  transactionId: 'transaction_123',
+  attributes: const <String, dynamic>{
+    'offer_id': 'summer_offer',
+  },
 );
 ```
 
-设置和清理用户 ID：
+- 只在新订阅购买并完成业务校验后调用。
+- restore 不代表新收入，不能调用。
+- `amount` 必须是大于 `0` 的有限数。
+- `currency` 必须为三位大写 ISO 4217 代码，例如 `USD`、`CNY`。
+- `transactionId` 可省略；传入时不能为空。
+- 该方法不上传商店 receipt。
+
+#### 2. 免费试用开始
+
+```dart
+await analytics.trackSingularTrialStart(
+  transactionId: 'transaction_123',
+  attributes: const <String, dynamic>{
+    'subscription_id': 'premium_monthly',
+  },
+);
+```
+
+试用开始是非收入事件，不传金额和币种。只在新的免费试用真正生效后调用，
+恢复历史权益时不要调用。
+
+#### 3. 非订阅内购成功
+
+购买相关类型来自宿主精确锁定的 `in_app_purchase: 3.2.4`：
+
+```dart
+import 'package:in_app_purchase/in_app_purchase.dart';
+
+await analytics.trackSingularInAppPurchase(
+  purchase: purchaseDetails,
+  product: productDetails,
+  attributes: const <String, dynamic>{
+    'content_type': 'coins',
+  },
+);
+```
+
+方法要求：
+
+- `purchaseDetails.status == PurchaseStatus.purchased`。
+- `purchaseDetails.productID == productDetails.id`。
+- `productDetails.rawPrice` 必须是大于 `0` 的有限数。
+- `productDetails.currencyCode` 是三位大写币种。
+- restored、pending、canceled 和 error 状态都不能上报。
+- 调用前必须完成 analytics 初始化。
+
+本包只向 Singular 转换并发送商店购买数据，不负责校验用户权益，也不会调用
+`InAppPurchase.completePurchase()`。典型接法如下：
+
+```dart
+Future<void> handlePurchase(
+  PurchaseDetails purchase,
+  ProductDetails product,
+) async {
+  if (purchase.status != PurchaseStatus.purchased) {
+    return;
+  }
+
+  final bool verified = await verifyPurchaseWithServer(purchase);
+  if (!verified) {
+    return;
+  }
+
+  await analytics.trackSingularInAppPurchase(
+    purchase: purchase,
+    product: product,
+  );
+
+  if (purchase.pendingCompletePurchase) {
+    await InAppPurchase.instance.completePurchase(purchase);
+  }
+}
+```
+
+`verifyPurchaseWithServer()` 代表宿主自己的服务端校验。不要因为 analytics 上报
+成功就跳过购买校验，也不要由 analytics 包决定是否发放权益。
+
+### 特殊自定义事件
+
+只有无法使用自动事件或上述三个标准事件的特殊需求，才调用
+`trackCustomEvent()`。`targets` 是必填且不能为空，不存在默认发送目标。
+
+只发送 Singular：
+
+```dart
+await analytics.trackCustomEvent(
+  name: 'special_campaign_event',
+  parameters: const <String, dynamic>{
+    'campaign_id': 'summer_2026',
+  },
+  targets: const <AnalyticsTarget>{
+    AnalyticsTarget.singular,
+  },
+);
+```
+
+确有需要时只发送 Facebook：
+
+```dart
+await analytics.trackCustomEvent(
+  name: 'special_facebook_event',
+  targets: const <AnalyticsTarget>{
+    AnalyticsTarget.facebook,
+  },
+);
+```
+
+同时发送两个渠道：
+
+```dart
+await analytics.trackCustomEvent(
+  name: 'special_shared_event',
+  targets: const <AnalyticsTarget>{
+    AnalyticsTarget.facebook,
+    AnalyticsTarget.singular,
+  },
+);
+```
+
+自定义参数只能使用字符串、数字或布尔值；Map、List 等复杂结构应先转为 JSON
+字符串。不要上传密码、Token、身份证号或完整支付信息等敏感数据。
+
+带收入的特殊自定义事件必须同时传金额和币种：
+
+```dart
+await analytics.trackCustomEvent(
+  name: 'approved_special_revenue',
+  valueToSum: 1.99,
+  revenueCurrency: 'USD',
+  targets: const <AnalyticsTarget>{
+    AnalyticsTarget.singular,
+  },
+);
+```
+
+不要用它代替订阅或非订阅内购的固定方法。
+
+### 用户 ID
 
 ```dart
 await analytics.setUserId('user_123');
 await analytics.clearUser();
 ```
 
-## 推荐使用规则
+## 队列与错误处理
 
-### 配置规则
-
-1. 只以远程 JSON 为配置来源，不要再向原生工程写入 Facebook app id 或 client token。
-2. 生产环境保持 Facebook 和 Singular 启用。Facebook 账号失效时替换 app id/client token，不要通过反复关闭 provider 处理。
-3. iOS 和 Android 凭据必须分别填写，app id 与 client token 必须成对更新。
-4. 每次修改 JSON 都递增 `version`，发布前确认公开 URL 返回 `200` 且内容是完整合法 JSON。
-5. 固定配置 URL 和 `cacheKey`，不要在正常升级或换号时主动清理配置缓存。
-6. 不要让业务代码直接调用 Facebook 或 Singular SDK，统一通过 `CompanyAnalytics`，否则无法获得统一的错误、路由和队列行为。
-
-### 初始化规则
-
-1. 每个应用进程只初始化一次，不创建多个 `CompanyAnalytics` 实例。
-2. SDK 只在调用 `initFromRemoteConfig()` 时请求 JSON，不会在后台轮询配置。
-3. 正常事件尽量在初始化完成后发送；初始化前必须发送的事件会进入持久 outbox。
-4. iOS ATT 检查发生在配置解析成功后、Facebook 和 Singular 启动前。
-5. 初始化失败应记录日志，但通常不需要业务侧立即循环重试；下一次 `track()` 会尝试恢复初始化。
-
-### 事件规则
-
-1. 事件名使用稳定的 `snake_case`，发布后不要随意改名或让同一含义出现多个名称。
-2. 参数 key 同样保持稳定；值使用字符串、数字或布尔值。数组、Map 等结构先转成 JSON 字符串。
-3. 不上传密码、Token、身份证号、完整支付信息等敏感数据。
-4. 每一次 `track()`、`setUserId()` 和 `clearUser()` 都必须 `await`，并按需记录异常。
-5. 默认同时发送到 Facebook 和 Singular。只有明确的业务需求才使用 `sendToFacebook` 或 `sendToSingular` 改变路由。
-6. 收入事件必须同时传 `valueToSum` 和 ISO 4217 货币代码 `revenueCurrency`。
-7. 收入事件建议携带稳定的订单 ID，便于下游对 at-least-once 重试产生的重复事件去重。
-
-## Facebook 配置失效或换号
-
-Facebook 后台账号被封、App 不可用或 client token 失效时，不需要重新打包：
-
-1. 在 Facebook 后台准备新的 App ID 和对应 client token。
-2. 同时更新 JSON 中 `facebook.ios` 和 `facebook.android` 的对应凭据。
-3. 递增 JSON 的 `version` 并发布。
-4. 用浏览器或 `curl` 确认公开 URL 已返回新配置。
-5. 设备下一次冷启动调用 `initFromRemoteConfig()` 时会获取并使用新配置；成功配置会写入本地缓存。
-6. 后续冷启动如果网络失败，会使用这份已缓存的新配置。
-
-SDK 不做进程内定时轮询，也不要求已经运行的进程热切换 Facebook App。换号后的保证边界是：设备在启动初始化时成功获取新 JSON 后，本次初始化及后续冷启动都会使用新配置；旧 Manifest、resources、Info.plist 或 xcconfig 中的 Facebook 凭据不会覆盖它。
-
-为了实现这一点：
-
-- Android 最终 Manifest 会移除 Meta 的 `FacebookInitProvider`，避免旧原生配置抢先启动 App Events。
-- iOS 插件不会在注册时使用 Info.plist 凭据启动 CoreKit，并会把 App Events 绑定到 JSON App ID。
-- Android 和 iOS 都不会因为新旧凭据不同而抛出 `CONFIG_MISMATCH`。
-
-## 收入事件
-
-```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'purchase_success',
-    parameters: {
-      'product_id': 'sub_monthly',
-      'order_id': 'order_20260720_001',
-    },
-    valueToSum: 9.99,
-    revenueCurrency: 'USD',
-  ),
-);
-```
-
-`purchase` 和 `purchase_success` 必须带收入字段，并在 Facebook 侧使用原生 Purchase API、在 Singular 侧使用 revenue API。业务代码不需要自行添加 `fb_currency`。
-
-## 标准事件映射
-
-以下统一事件名会自动转换为 Meta 标准事件名；Singular 仍接收原始统一名称：
-
-| 业务场景 | 推荐事件名 |
+| 场景 | 行为 |
 | --- | --- |
-| 注册与内容 | `sign_up`、`view_content`、`search`、`rate` |
-| 结算与订阅 | `add_to_cart`、`add_to_wishlist`、`begin_checkout`、`add_payment_info`、`purchase_success`、`start_trial`、`subscribe` |
-| 广告 | `ad_impression`、`ad_click` |
-| 教程与成长 | `tutorial_complete`、`level_achieved`、`unlock_achievement`、`spend_virtual_currency` |
+| 初始化前调用订阅、试用或自定义事件 | 写入 `SharedPreferences` outbox，初始化后按顺序补发 |
+| 初始化前调用非订阅 IAP | 不缓存收据，抛出 `AnalyticsNotInitializedException` |
+| 初始化后事件发送失败 | 抛出 `AnalyticsDeliveryException` |
+| outbox 超过容量 | 丢弃最旧事件，并增加 `droppedPendingEventCount` |
+| 进程在发送过程中异常退出 | outbox 为 at-least-once 语义，事件可能重复 |
 
-其他自定义名称会按原名称发送。
-
-只发送到一个 provider：
+所有 API 调用都应 `await`：
 
 ```dart
-await analytics.track(
-  const AnalyticsEvent(
-    name: 'facebook_only_event',
-    sendToSingular: false,
-  ),
-);
+try {
+  await analytics.trackCustomEvent(
+    name: 'special_campaign_event',
+    targets: const <AnalyticsTarget>{
+      AnalyticsTarget.singular,
+    },
+  );
+} on AnalyticsDeliveryException catch (error) {
+  debugPrint('event=${error.eventName} errors=${error.providerErrors}');
+}
 ```
 
-## 缓存、队列与失败行为
+默认最多缓存 200 条。可以监控是否发生容量丢弃：
 
-### 配置缓存
+```dart
+if (analytics.droppedPendingEventCount > 0) {
+  debugPrint(
+    'Dropped ${analytics.droppedPendingEventCount} analytics events',
+  );
+}
+```
 
-每次初始化先请求远程 URL：
+一个 provider 失败不会阻止 SDK 尝试另一个 provider。
+
+## 配置缓存与 Facebook 换号
+
+初始化时远程配置按以下规则加载：
 
 | 情况 | 行为 |
 | --- | --- |
-| 远程成功且 JSON 合法 | 使用远程配置，并覆盖本地成功缓存 |
+| 远程成功且 JSON 合法 | 使用远程配置并覆盖本地成功缓存 |
 | 远程失败但存在缓存 | 使用上一次成功缓存 |
-| 远程失败且没有缓存 | 初始化失败；初始化前事件继续进入 outbox |
-| JSON 下载成功但格式或必填字段错误 | 不覆盖已有成功缓存，本次请求按失败处理 |
+| 远程失败且没有缓存 | 初始化失败；可序列化事件继续进入 outbox |
+| 下载成功但 JSON 非法 | 不覆盖已有成功缓存，本次按失败处理 |
 
-默认请求最多尝试 3 次、单次超时 15 秒，重试间隔从 500ms 开始退避。
-
-可以检查本次配置来源：
+查看当前配置来源：
 
 ```dart
 final result = analytics.lastRemoteConfigResult;
@@ -316,52 +480,43 @@ debugPrint('sha256=${result?.metadata?.sha256}');
 debugPrint('changed=${result?.changedFromCache}');
 ```
 
-### 事件 outbox
+Facebook App 失效或换号时不需要重新打包：
 
-- 初始化前事件保存在 `SharedPreferences` 持久 outbox，初始化成功后按顺序补发。
-- 默认最多保存 200 条；超限丢弃最旧事件，并增加 `droppedPendingEventCount`。
-- 队列采用 at-least-once 语义，进程异常退出时可能重复发送已经成功的事件。
-- 已完成初始化后，新的 `track()` 如果发送失败会抛出 `AnalyticsDeliveryException`，不会自动加入 outbox；业务侧可使用同一个事件重试。
-- 一个 provider 失败不会阻止 SDK 尝试另一个 provider。
+1. 准备新的 App ID 和属于同一 App 的 Client Token。
+2. 更新远程 JSON 对应平台的凭据。
+3. 递增 `version` 并发布 JSON。
+4. 确认公开 URL 返回 `200` 和完整合法 JSON。
+5. 设备下次冷启动初始化时获取新配置并写入缓存。
 
-错误处理示例：
+SDK 不做进程内定时轮询，也不保证正在运行的进程热切换 Facebook App。换号
+边界是：设备重新初始化并成功取得新 JSON 后，当前和后续冷启动使用新凭据。
 
-```dart
-try {
-  await analytics.track(
-    const AnalyticsEvent(name: 'view_content'),
-  );
-} on AnalyticsDeliveryException catch (error) {
-  debugPrint('event=${error.eventName} errors=${error.providerErrors}');
-}
-```
+## 从 0.1.x 迁移到 0.2.0
 
-监控 outbox 是否发生容量丢弃：
+| 旧用法 | 新用法 |
+| --- | --- |
+| `track(AnalyticsEvent(...))` 上报订阅 | `trackSingularSubscription()` |
+| `track(AnalyticsEvent(...))` 上报试用 | `trackSingularTrialStart()` |
+| `track(AnalyticsEvent(...))` 上报非订阅 IAP | `trackSingularInAppPurchase()` |
+| 默认向多个 provider 发送自定义事件 | `trackCustomEvent(..., targets: {...})` |
 
-```dart
-if (analytics.droppedPendingEventCount > 0) {
-  debugPrint(
-    'Dropped ${analytics.droppedPendingEventCount} pending analytics events',
-  );
-}
-```
+`track(AnalyticsEvent)` 暂时保留以兼容旧代码，但已标记 `@Deprecated`，新业务
+不得继续使用。
 
-## 版本要求
+旧版 YAML、原生预填脚本和手动 `init(AnalyticsConfig)` 入口已经移除。新接入
+统一使用远程 JSON 和 `initFromRemoteConfig()`。旧项目残留的 Android
+`facebook_config.xml`、Facebook Manifest metadata、iOS
+`FacebookConfig.xcconfig`、Info.plist Facebook 字段不会覆盖本包的远程配置，
+可以按业务节奏清理。
 
-- Dart：`>=3.8.1 <4.0.0`
-- Flutter：`>=3.38.0`
-- Facebook App Events fork：`0.30.2+company.3`
-- Singular Flutter SDK fork：`1.8.0+company.2`
-- App Tracking Transparency：`^2.0.7`
+## 发布前检查
 
-## 旧接入迁移
-
-旧的 YAML、原生预填脚本和手动 `init(AnalyticsConfig)` 入口已经移除。新接入统一使用远程 JSON 和 `initFromRemoteConfig()`。
-
-旧版本残留的这些文件或字段不会影响当前 App Events 配置：
-
-- Android `facebook_config.xml` 和 Facebook Manifest metadata
-- iOS `FacebookConfig.xcconfig`、Info.plist Facebook 字段及旧 xcconfig include
-- `lib/generated/analytics_env.g.dart`
-
-可以在业务方便时清理，但无需为了 Facebook 换号强制发版删除。
+- 远程 JSON URL 返回 `200`，内容合法，`version` 已递增。
+- Facebook iOS 已配置 Shared Secret 并开启自动记录内购事件。
+- Facebook Android 已开启自动内购和订阅，并上传 Service Account JSON。
+- Singular 到 Facebook 的 **Revenue Events Postbacks** 未开启。
+- 宿主的 `in_app_purchase` 精确锁定为 `3.2.4`。
+- Singular 后台能分别看到 `sng_subscribe`、`sng_start_trial` 和
+  `sng_ecommerce_purchase`。
+- TikTok 映射分别为 `Subscribe`、`StartTrial`、`Purchase`。
+- Release 构建未开启 Facebook 或 Singular 调试日志。
