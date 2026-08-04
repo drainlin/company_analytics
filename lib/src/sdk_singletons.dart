@@ -76,6 +76,19 @@ class SingularSdkFacade {
     );
   }
 
+  /// Reports a StoreKit 1 transaction using Singular's native transaction API.
+  Future<void> storeKit1InAppPurchase(
+    String eventName, {
+    required String transactionId,
+    required String productId,
+  }) {
+    return Singular.storeKit1InAppPurchase(
+      eventName,
+      transactionId: transactionId,
+      productId: productId,
+    );
+  }
+
   Future<void> setCustomUserId(String customUserId) =>
       Singular.setCustomUserId(customUserId);
 

@@ -1,3 +1,14 @@
+## 0.2.2
+
+* Route iOS StoreKit 1 purchases through Singular's native
+  `iapComplete:withName:` API while the transaction is still in
+  `SKPaymentQueue`.
+* Return a platform error when the StoreKit 1 transaction cannot be matched,
+  so the host can retain and retry the unfinished transaction.
+* Forward iOS `enableLogging` and `logLevel` into `SingularConfig` and add
+  receipt-safe Dart, MethodChannel, StoreKit queue, and native SDK diagnostics.
+* Update the vendored Singular fork to `1.8.0+company.4`.
+
 ## 0.2.1
 
 * Add `trackFacebookTrialStart()` for verified free trials that Meta automatic

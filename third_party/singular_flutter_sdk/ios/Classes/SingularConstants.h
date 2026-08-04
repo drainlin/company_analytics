@@ -4,6 +4,7 @@
 #define START @"start"
 #define EVENT @"event"
 #define EVENT_WITH_ARGS @"eventWithArgs"
+#define STOREKIT1_IN_APP_PURCHASE @"storeKit1InAppPurchase"
 
 #pragma mark - custom user id
 

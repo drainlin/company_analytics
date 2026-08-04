@@ -1,6 +1,7 @@
 #import <Singular/Singular.h>
 #import <Singular/SingularConfig.h>
 #import <Singular/SingularLinkParams.h>
+#import <StoreKit/StoreKit.h>
 #import "SingularAppDelegate.h"
 #import "SingularConstants.h"
 #import "SingularSDK.h"
@@ -9,6 +10,14 @@
 
 static FlutterMethodChannel *channel;
 static NSDictionary *configDict;
+static BOOL singularFlutterLoggingEnabled = NO;
+
+#define SINGULAR_FLUTTER_LOG(format, ...) \
+    do { \
+        if (singularFlutterLoggingEnabled) { \
+            NSLog((format), ##__VA_ARGS__); \
+        } \
+    } while (0)
 
 + (void)registerWithRegistrar:(NSObject<FlutterPluginRegistrar> *)registrar {
     channel = [FlutterMethodChannel methodChannelWithName:@"singular-api" binaryMessenger:[registrar messenger]];
@@ -24,6 +33,8 @@ static NSDictionary *configDict;
         [self event:call withResult:result];
     } else if ([EVENT_WITH_ARGS isEqualToString:call.method]) {
         [self eventWithArgs:call withResult:result];
+    } else if ([STOREKIT1_IN_APP_PURCHASE isEqualToString:call.method]) {
+        [self storeKit1InAppPurchase:call withResult:result];
     } else if ([SET_CUSTOM_USER_ID isEqualToString:call.method]) {
         [self setCustomUserId:call withResult:result];
     } else if ([UNSET_CUSTOM_USER_ID isEqualToString:call.method]) {
@@ -100,6 +111,9 @@ static NSDictionary *configDict;
     float shortLinkResolveTimeOut = [configDict[@"shortLinkResolveTimeOut"] floatValue];
     NSString *customUserId = configDict[@"customUserId"];
     BOOL limitAdvertisingIdentifiers = [configDict[@"limitAdvertisingIdentifiers"] boolValue];
+    BOOL enableLogging = [configDict[@"enableLogging"] boolValue];
+    NSInteger requestedLogLevel = [configDict[@"logLevel"] integerValue];
+    singularFlutterLoggingEnabled = enableLogging;
 
     SingularConfig *config = [[SingularConfig alloc] initWithApiKey:apiKey andSecret:secretKey];
     config.skAdNetworkEnabled = skAdNetworkEnabled;
@@ -111,6 +125,20 @@ static NSDictionary *configDict;
     config.brandedDomains = configDict[@"brandedDomains"];
     config.limitAdvertisingIdentifiers = limitAdvertisingIdentifiers;
     config.enableOdmWithTimeoutInterval = [configDict[@"enableOdmWithTimeoutInterval"] intValue];
+    config.enableLogging = enableLogging;
+    if (requestedLogLevel >= SingularLogLevelNone &&
+        requestedLogLevel <= SingularLogLevelVerbose) {
+        config.logLevel = (SingularLogLevel)requestedLogLevel;
+    } else if (enableLogging) {
+        config.logLevel = SingularLogLevelVerbose;
+    }
+
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Configuring Singular enableLogging=%@ logLevel=%ld waitForATT=%d skAdNetwork=%@ limitDataSharing=%@",
+          enableLogging ? @"YES" : @"NO",
+          (long)config.logLevel,
+          waitForTrackingAuthorizationWithTimeoutInterval,
+          skAdNetworkEnabled ? @"YES" : @"NO",
+          configDict[@"limitDataSharing"] ?: @"null");
 
     NSArray *props = configDict[@"globalProperties"];
 
@@ -211,7 +239,11 @@ static NSDictionary *configDict;
     
     config.pushNotificationLinkPath = configDict[@"pushNotificationsLinkPaths"];;
 
-    [Singular start:config];
+    BOOL started = [Singular start:config];
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Singular start returned=%@ sessionStarted=%@ sdkVersion=%@",
+          started ? @"YES" : @"NO",
+          [Singular sessionStarted] ? @"YES" : @"NO",
+          [Singular version]);
 }
 
 + (NSString *)dictionaryToJson:(NSDictionary *)data {
@@ -242,8 +274,101 @@ static NSDictionary *configDict;
     NSString *eventName =  call.arguments[@"eventName"];
     NSDictionary *args = call.arguments[@"args"];
 
+    NSString *receipt = [args[@"ptr"] isKindOfClass:[NSString class]] ? args[@"ptr"] : nil;
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] eventWithArgs name=%@ keys=%@ revenue=%@ currency=%@ product=%@ transaction=%@ receiptLength=%lu sessionStarted=%@",
+          eventName,
+          [[args allKeys] componentsJoinedByString:@","],
+          args[@"r"] ?: @"null",
+          args[@"pcc"] ?: @"null",
+          args[@"pk"] ?: @"null",
+          args[@"pti"] ?: @"null",
+          (unsigned long)receipt.length,
+          [Singular sessionStarted] ? @"YES" : @"NO");
+
     [Singular event:eventName withArgs:args];
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] eventWithArgs queued name=%@", eventName);
     result(nil);
+}
+
+- (void)storeKit1InAppPurchase:(FlutterMethodCall *)call withResult:(FlutterResult)result {
+    NSString *eventName = call.arguments[@"eventName"];
+    NSString *transactionId = call.arguments[@"transactionId"];
+    NSString *productId = call.arguments[@"productId"];
+
+    if (![eventName isKindOfClass:[NSString class]] || eventName.length == 0 ||
+        ![transactionId isKindOfClass:[NSString class]] || transactionId.length == 0 ||
+        ![productId isKindOfClass:[NSString class]] || productId.length == 0) {
+        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP rejected invalid arguments event=%@ product=%@ transaction=%@",
+              eventName, productId, transactionId);
+        result([FlutterError errorWithCode:@"singular_storekit1_invalid_arguments"
+                                   message:@"StoreKit 1 IAP requires eventName, productId, and transactionId."
+                                   details:nil]);
+        return;
+    }
+
+    NSArray<SKPaymentTransaction *> *transactions = [SKPaymentQueue defaultQueue].transactions;
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP lookup event=%@ product=%@ transaction=%@ queueCount=%lu sessionStarted=%@",
+          eventName,
+          productId,
+          transactionId,
+          (unsigned long)transactions.count,
+          [Singular sessionStarted] ? @"YES" : @"NO");
+
+    SKPaymentTransaction *matchedTransaction = nil;
+    for (SKPaymentTransaction *transaction in transactions) {
+        NSString *queuedTransactionId = transaction.transactionIdentifier ?: @"null";
+        NSString *queuedProductId = transaction.payment.productIdentifier ?: @"null";
+        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 queue item product=%@ transaction=%@ state=%ld",
+              queuedProductId,
+              queuedTransactionId,
+              (long)transaction.transactionState);
+        if ([queuedTransactionId isEqualToString:transactionId] &&
+            [queuedProductId isEqualToString:productId]) {
+            matchedTransaction = transaction;
+            break;
+        }
+    }
+
+    if (matchedTransaction == nil) {
+        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP transaction not found product=%@ transaction=%@",
+              productId, transactionId);
+        result([FlutterError errorWithCode:@"singular_storekit1_transaction_not_found"
+                                   message:@"The StoreKit 1 transaction is no longer present in SKPaymentQueue."
+                                   details:@{
+                                       @"productId": productId,
+                                       @"transactionId": transactionId,
+                                       @"queueCount": @(transactions.count),
+                                   }]);
+        return;
+    }
+
+    if (matchedTransaction.transactionState != SKPaymentTransactionStatePurchased) {
+        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP wrong state=%ld product=%@ transaction=%@",
+              (long)matchedTransaction.transactionState, productId, transactionId);
+        result([FlutterError errorWithCode:@"singular_storekit1_transaction_not_purchased"
+                                   message:@"The StoreKit 1 transaction is not in the purchased state."
+                                   details:@{
+                                       @"productId": productId,
+                                       @"transactionId": transactionId,
+                                       @"state": @(matchedTransaction.transactionState),
+                                   }]);
+        return;
+    }
+
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Calling Singular iapComplete:withName: product=%@ transaction=%@ event=%@",
+          productId, transactionId, eventName);
+    [Singular iapComplete:matchedTransaction withName:eventName];
+    [Singular sendAllBatches];
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Singular native StoreKit1 IAP queued and flush requested product=%@ transaction=%@ event=%@",
+          productId, transactionId, eventName);
+
+    result(@{
+        @"status": @"queued_to_singular_native_sdk",
+        @"eventName": eventName,
+        @"productId": productId,
+        @"transactionId": transactionId,
+        @"queueCount": @(transactions.count),
+    });
 }
 
 - (void)setCustomUserId:(FlutterMethodCall *)call withResult:(FlutterResult)result {
@@ -272,6 +397,8 @@ static NSDictionary *configDict;
     NSString *currency =  call.arguments[@"currency"];
     double amount = [call.arguments[@"amount"] doubleValue];
 
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] customRevenue name=%@ currency=%@ amount=%f sessionStarted=%@",
+          eventName, currency, amount, [Singular sessionStarted] ? @"YES" : @"NO");
     [Singular customRevenue:eventName currency:currency amount:amount];
     result(nil);
 }
@@ -282,6 +409,12 @@ static NSDictionary *configDict;
     double amount = [call.arguments[@"amount"] doubleValue];
     NSDictionary *attributes = call.arguments[@"attributes"];
 
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] customRevenueWithAttributes name=%@ currency=%@ amount=%f keys=%@ sessionStarted=%@",
+          eventName,
+          currency,
+          amount,
+          [[attributes allKeys] componentsJoinedByString:@","],
+          [Singular sessionStarted] ? @"YES" : @"NO");
     [Singular customRevenue:eventName currency:currency amount:amount withAttributes:attributes];
     result(nil);
 }

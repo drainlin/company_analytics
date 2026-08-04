@@ -11,6 +11,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
 import 'package:in_app_purchase_android/billing_client_wrappers.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
+import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 import 'package:singular_flutter_sdk/singular.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
 import 'package:singular_flutter_sdk/singular_iap.dart';
@@ -1108,6 +1110,27 @@ void main() {
       },
     );
 
+    test('routes StoreKit 1 purchases through native iapComplete', () async {
+      final singular = _RecordingSingularSdkFacade();
+      final provider = SingularAnalyticsProvider(
+        apiKey: 'key',
+        secret: 'secret',
+        enableLogging: true,
+        waitForTrackingAuthSeconds: 0,
+        singular: singular,
+      );
+
+      await provider.trackInAppPurchase(
+        _storeKit1PurchaseDetails(),
+        _productDetails(),
+      );
+
+      expect(singular.calls, <String>['storeKit1InAppPurchase']);
+      expect(singular.lastEventName, 'sng_ecommerce_purchase');
+      expect(singular.lastTransactionId, 'purchase_123');
+      expect(singular.lastProductId, 'coin_pack');
+    });
+
     test('reports Google Play purchase validation data', () async {
       final singular = _RecordingSingularSdkFacade();
       final provider = SingularAnalyticsProvider(
@@ -1648,6 +1671,8 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   double? lastAmount;
   Map? lastArgs;
   SingularIAP? lastPurchase;
+  String? lastTransactionId;
+  String? lastProductId;
 
   @override
   Future<void> start(SingularConfig config) async {
@@ -1713,6 +1738,18 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   }
 
   @override
+  Future<void> storeKit1InAppPurchase(
+    String eventName, {
+    required String transactionId,
+    required String productId,
+  }) async {
+    calls.add('storeKit1InAppPurchase');
+    lastEventName = eventName;
+    lastTransactionId = transactionId;
+    lastProductId = productId;
+  }
+
+  @override
   Future<void> setCustomUserId(String customUserId) async {}
 
   @override
@@ -1739,6 +1776,26 @@ PurchaseDetails _appStorePurchaseDetails({
     ),
     transactionDate: '1785298962000',
     status: status,
+  );
+}
+
+AppStorePurchaseDetails _storeKit1PurchaseDetails() {
+  return AppStorePurchaseDetails(
+    purchaseID: 'purchase_123',
+    productID: 'coin_pack',
+    verificationData: PurchaseVerificationData(
+      localVerificationData: 'app_store_receipt',
+      serverVerificationData: 'app_store_receipt',
+      source: 'app_store',
+    ),
+    transactionDate: '1785298962000',
+    skPaymentTransaction: SKPaymentTransactionWrapper(
+      payment: const SKPaymentWrapper(productIdentifier: 'coin_pack'),
+      transactionState: SKPaymentTransactionStateWrapper.purchased,
+      transactionIdentifier: 'purchase_123',
+      transactionTimeStamp: 1785298962,
+    ),
+    status: PurchaseStatus.purchased,
   );
 }
 

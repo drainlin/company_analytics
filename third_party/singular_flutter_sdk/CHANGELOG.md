@@ -1,3 +1,11 @@
+## 1.8.0+company.4
+
+* Add a StoreKit 1 MethodChannel path that resolves the live
+  `SKPaymentTransaction` and calls Singular `iapComplete:withName:`.
+* Forward iOS logging configuration to the native Singular SDK.
+* Add non-sensitive verbose diagnostics for SDK startup, revenue events, and
+  StoreKit transaction matching.
+
 ## 1.8.0+company.3
 
 * Make `inAppPurchase` and `inAppPurchaseWithAttributes` awaitable.

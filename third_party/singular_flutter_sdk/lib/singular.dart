@@ -247,6 +247,32 @@ class Singular {
     });
   }
 
+  /// Reports a StoreKit 1 transaction through Singular's native
+  /// `iapComplete:withName:` API.
+  static Future<void> storeKit1InAppPurchase(
+    String eventName, {
+    required String transactionId,
+    required String productId,
+  }) async {
+    if (singularConfig?.enableLogging ?? false) {
+      print(
+        '[SingularFlutter][Dart] StoreKit1 IAP request '
+        'event=$eventName product=$productId transaction=$transactionId',
+      );
+    }
+    final result = await _channel.invokeMapMethod<String, dynamic>(
+      'storeKit1InAppPurchase',
+      <String, dynamic>{
+        'eventName': eventName,
+        'transactionId': transactionId,
+        'productId': productId,
+      },
+    );
+    if (singularConfig?.enableLogging ?? false) {
+      print('[SingularFlutter][Dart] StoreKit1 IAP native result=$result');
+    }
+  }
+
   static void adRevenue(SingularAdData? adData) {
     if (adData == null || !adData.hasRequiredParams()) {
       return;

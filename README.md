@@ -32,8 +32,9 @@ Facebook 已经通过 Meta SDK 自动采集收入，再接收 Singular 的收入
 - Dart：`>=3.10.0 <4.0.0`
 - Flutter：`>=3.38.0`
 - `in_app_purchase`：必须精确锁定为 `3.2.4`
+- `in_app_purchase_storekit`：`0.4.11`
 - Facebook App Events fork：`0.30.2+company.3`
-- Singular Flutter SDK fork：`1.8.0+company.3`
+- Singular Flutter SDK fork：`1.8.0+company.4`
 - App Tracking Transparency：`^2.0.7`
 
 暂不支持 Google Play Billing v8。升级 `in_app_purchase` 或间接引入 Billing v8，
@@ -189,7 +190,7 @@ iOS 和 Android 共用一个 JSON，通过平台字段保存各自凭据：
 | `facebook.ios/android.client_token` | 必须与对应 App ID 属于同一个 Facebook App |
 | `auto_log_app_events_enabled` | 设为 `true`，保持 Facebook 自动事件 |
 | `advertiser_tracking_enabled` | 按隐私合规策略显式设置 |
-| `singular.enable_logging` | 仅调试时为 `true`，生产环境为 `false` |
+| `singular.enable_logging` | 仅调试时为 `true`，生产环境为 `false`；iOS 会启用 Singular Verbose 日志及 StoreKit 交易诊断 |
 | `singular.wait_for_tracking_auth_seconds` | iOS 等待 ATT 的秒数，推荐 `15` |
 
 如果必填值仍为 `YOUR_...` 占位符，SDK 会将对应 provider 视为未配置并跳过。
@@ -205,6 +206,9 @@ bash tool/serve_remote_config.sh
 
 - iOS Simulator：`http://127.0.0.1:8765/analytics.remote.dev.json`
 - Android Emulator：`http://10.0.2.2:8765/analytics.remote.dev.json`
+
+仓库中的 [iOS example](example/README.md) 可用
+`test.1000`、`test.year` 和 `test.more1` 验证 Singular 的非订阅购买与订阅事件。
 
 ## 初始化
 
@@ -366,6 +370,9 @@ await analytics.trackSingularInAppPurchase(
 - `productDetails.currencyCode` 是三位大写币种。
 - restored、pending、canceled 和 error 状态都不能上报。
 - 调用前必须完成 analytics 初始化。
+- StoreKit 1 会在完成交易前通过 transaction ID 找到原生
+  `SKPaymentTransaction`，并调用 Singular `iapComplete:withName:`。
+- StoreKit 2 继续通过 receipt/JWS 字段上报。
 
 本包只向 Singular 转换并发送商店购买数据，不负责校验用户权益，也不会调用
 `InAppPurchase.completePurchase()`。典型接法如下：

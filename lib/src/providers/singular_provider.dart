@@ -1,5 +1,6 @@
 import 'package:in_app_purchase/in_app_purchase.dart';
 import 'package:in_app_purchase_android/in_app_purchase_android.dart';
+import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:singular_flutter_sdk/events.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
 import 'package:singular_flutter_sdk/singular_iap.dart';
@@ -30,10 +31,16 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
   Future<void> initialize() async {
     final config = SingularConfig(apiKey, secret)
       ..enableLogging = enableLogging
+      ..logLevel = enableLogging ? 5 : -1
       ..waitForTrackingAuthorizationWithTimeoutInterval =
           waitForTrackingAuthSeconds;
 
+    _log(
+      'initialize enableLogging=$enableLogging '
+      'logLevel=${config.logLevel} waitForATT=$waitForTrackingAuthSeconds',
+    );
     await _singular.start(config);
+    _log('initialize completed');
   }
 
   @override
@@ -93,7 +100,35 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
       );
     }
 
+    _log(
+      'IAP received type=${purchase.runtimeType} product=${purchase.productID} '
+      'transaction=${purchase.purchaseID ?? 'null'} '
+      'receiptLength=${purchase.verificationData.serverVerificationData.length} '
+      'amount=${product.rawPrice} currency=${product.currencyCode}',
+    );
+
+    if (purchase is AppStorePurchaseDetails) {
+      final transactionId = purchase.purchaseID?.trim();
+      if (transactionId == null || transactionId.isEmpty) {
+        throw const AnalyticsEventValidationException(
+          'StoreKit 1 purchases require a transaction id.',
+        );
+      }
+      _log(
+        'routing StoreKit 1 purchase through native '
+        'Singular iapComplete:withName:',
+      );
+      await _singular.storeKit1InAppPurchase(
+        Events.sngEcommercePurchase,
+        transactionId: transactionId,
+        productId: purchase.productID,
+      );
+      _log('native StoreKit 1 IAP call completed');
+      return;
+    }
+
     final singularPurchase = _buildSingularPurchase(purchase, product);
+    _log('routing purchase through Singular receipt/JWS event path');
     if (attributes.isEmpty) {
       await _singular.inAppPurchase(
         Events.sngEcommercePurchase,
@@ -106,6 +141,14 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
       singularPurchase,
       attributes,
     );
+  }
+
+  void _log(String message) {
+    if (enableLogging) {
+      // Never log the API secret or receipt body.
+      // ignore: avoid_print
+      print('[company_analytics][Singular] $message');
+    }
   }
 
   static SingularIAP _buildSingularPurchase(
