@@ -34,7 +34,7 @@ Facebook 已经通过 Meta SDK 自动采集收入，再接收 Singular 的收入
 - `in_app_purchase`：必须精确锁定为 `3.2.4`
 - `in_app_purchase_storekit`：`0.4.11`
 - Facebook App Events fork：`0.30.2+company.3`
-- Singular Flutter SDK fork：`1.8.0+company.4`
+- Singular Flutter SDK fork：`1.8.0+company.5`
 - App Tracking Transparency：`^2.0.7`
 
 暂不支持 Google Play Billing v8。升级 `in_app_purchase` 或间接引入 Billing v8，
@@ -50,7 +50,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.2.0
+      ref: v0.3.0
 
   in_app_purchase: 3.2.4
 ```
@@ -62,7 +62,7 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.2.0
+      ref: v0.3.0
 
   in_app_purchase: 3.2.4
 ```

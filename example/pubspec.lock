@@ -55,7 +55,7 @@ packages:
       path: ".."
       relative: true
     source: path
-    version: "0.2.2"
+    version: "0.3.0"
   crypto:
     dependency: transitive
     description:
@@ -324,7 +324,7 @@ packages:
       path: "../third_party/singular_flutter_sdk"
       relative: true
     source: path
-    version: "1.8.0+company.4"
+    version: "1.8.0+company.5"
   sky_engine:
     dependency: transitive
     description: flutter

@@ -1,3 +1,10 @@
+## 1.8.0+company.5
+
+* Pass StoreKit 1 amount, currency, and custom attributes through the native
+  bridge and use Singular's validated transaction revenue API.
+* Keep explicit revenue values as a fallback when Singular's asynchronous
+  StoreKit product enrichment does not populate the event amount.
+
 ## 1.8.0+company.4
 
 * Add a StoreKit 1 MethodChannel path that resolves the live

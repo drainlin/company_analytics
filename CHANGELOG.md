@@ -1,3 +1,11 @@
+## 0.3.0
+
+* Preserve StoreKit 1 revenue amount and currency by passing authoritative
+  product values into Singular's validated native transaction API.
+* Keep the live `SKPaymentTransaction` and receipt-validation path while
+  protecting revenue fields from custom-attribute overrides.
+* Update the vendored Singular Flutter SDK fork to `1.8.0+company.5`.
+
 ## 0.2.2
 
 * Route iOS StoreKit 1 purchases through Singular's native
