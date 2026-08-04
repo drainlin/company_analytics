@@ -116,12 +116,15 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
       }
       _log(
         'routing StoreKit 1 purchase through native '
-        'Singular iapComplete:withName:',
+        'Singular validated transaction revenue path',
       );
       await _singular.storeKit1InAppPurchase(
         Events.sngEcommercePurchase,
         transactionId: transactionId,
         productId: purchase.productID,
+        amount: product.rawPrice,
+        currency: product.currencyCode,
+        attributes: attributes,
       );
       _log('native StoreKit 1 IAP call completed');
       return;

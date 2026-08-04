@@ -2,6 +2,7 @@
 #import <Singular/SingularConfig.h>
 #import <Singular/SingularLinkParams.h>
 #import <StoreKit/StoreKit.h>
+#import <math.h>
 #import "SingularAppDelegate.h"
 #import "SingularConstants.h"
 #import "SingularSDK.h"
@@ -294,14 +295,28 @@ static BOOL singularFlutterLoggingEnabled = NO;
     NSString *eventName = call.arguments[@"eventName"];
     NSString *transactionId = call.arguments[@"transactionId"];
     NSString *productId = call.arguments[@"productId"];
+    NSNumber *amountNumber = call.arguments[@"amount"];
+    NSString *currency = call.arguments[@"currency"];
+    NSDictionary *attributes = [call.arguments[@"attributes"] isKindOfClass:[NSDictionary class]]
+        ? call.arguments[@"attributes"]
+        : @{};
+    BOOL hasValidAmountType = [amountNumber isKindOfClass:[NSNumber class]];
+    double amount = hasValidAmountType ? [amountNumber doubleValue] : NAN;
+    NSCharacterSet *invalidCurrencyCharacters =
+        [[NSCharacterSet characterSetWithCharactersInString:@"ABCDEFGHIJKLMNOPQRSTUVWXYZ"] invertedSet];
+    BOOL hasValidCurrency = [currency isKindOfClass:[NSString class]] &&
+        currency.length == 3 &&
+        [currency rangeOfCharacterFromSet:invalidCurrencyCharacters].location == NSNotFound;
 
     if (![eventName isKindOfClass:[NSString class]] || eventName.length == 0 ||
         ![transactionId isKindOfClass:[NSString class]] || transactionId.length == 0 ||
-        ![productId isKindOfClass:[NSString class]] || productId.length == 0) {
-        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP rejected invalid arguments event=%@ product=%@ transaction=%@",
-              eventName, productId, transactionId);
+        ![productId isKindOfClass:[NSString class]] || productId.length == 0 ||
+        !hasValidAmountType || !isfinite(amount) || amount <= 0 ||
+        !hasValidCurrency) {
+        SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] StoreKit1 IAP rejected invalid arguments event=%@ product=%@ transaction=%@ amount=%@ currency=%@",
+              eventName, productId, transactionId, amountNumber, currency);
         result([FlutterError errorWithCode:@"singular_storekit1_invalid_arguments"
-                                   message:@"StoreKit 1 IAP requires eventName, productId, and transactionId."
+                                   message:@"StoreKit 1 IAP requires eventName, productId, transactionId, positive amount, and a three-letter currency."
                                    details:nil]);
         return;
     }
@@ -355,18 +370,38 @@ static BOOL singularFlutterLoggingEnabled = NO;
         return;
     }
 
-    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Calling Singular iapComplete:withName: product=%@ transaction=%@ event=%@",
-          productId, transactionId, eventName);
-    [Singular iapComplete:matchedTransaction withName:eventName];
+    NSMutableDictionary *revenueAttributes = [NSMutableDictionary dictionaryWithDictionary:attributes];
+    // These protected Singular revenue fields are authoritative over caller
+    // attributes. Singular still receives the live SKPaymentTransaction and
+    // receipt for IAP validation, while amount/currency do not depend solely
+    // on its asynchronous SKProductsRequest enrichment.
+    revenueAttributes[@"r"] = amountNumber;
+    revenueAttributes[@"pcc"] = currency;
+    revenueAttributes[@"pk"] = productId;
+    revenueAttributes[@"pti"] = transactionId;
+    revenueAttributes[@"is_revenue_event"] = @YES;
+
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Calling Singular customRevenue:transaction:withAttributes: product=%@ transaction=%@ event=%@ amount=%@ currency=%@ attributeKeys=%@",
+          productId,
+          transactionId,
+          eventName,
+          amountNumber,
+          currency,
+          [[revenueAttributes allKeys] componentsJoinedByString:@","]);
+    [Singular customRevenue:eventName
+                transaction:matchedTransaction
+             withAttributes:revenueAttributes];
     [Singular sendAllBatches];
-    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Singular native StoreKit1 IAP queued and flush requested product=%@ transaction=%@ event=%@",
-          productId, transactionId, eventName);
+    SINGULAR_FLUTTER_LOG(@"[SingularFlutter][iOS] Singular native StoreKit1 revenue queued and flush requested product=%@ transaction=%@ event=%@ amount=%@ currency=%@",
+          productId, transactionId, eventName, amountNumber, currency);
 
     result(@{
         @"status": @"queued_to_singular_native_sdk",
         @"eventName": eventName,
         @"productId": productId,
         @"transactionId": transactionId,
+        @"amount": amountNumber,
+        @"currency": currency,
         @"queueCount": @(transactions.count),
     });
 }

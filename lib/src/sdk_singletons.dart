@@ -81,11 +81,17 @@ class SingularSdkFacade {
     String eventName, {
     required String transactionId,
     required String productId,
+    required double amount,
+    required String currency,
+    required Map<String, dynamic> attributes,
   }) {
     return Singular.storeKit1InAppPurchase(
       eventName,
       transactionId: transactionId,
       productId: productId,
+      amount: amount,
+      currency: currency,
+      attributes: attributes,
     );
   }
 

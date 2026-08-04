@@ -371,7 +371,8 @@ await analytics.trackSingularInAppPurchase(
 - restored、pending、canceled 和 error 状态都不能上报。
 - 调用前必须完成 analytics 初始化。
 - StoreKit 1 会在完成交易前通过 transaction ID 找到原生
-  `SKPaymentTransaction`，并调用 Singular `iapComplete:withName:`。
+  `SKPaymentTransaction`，通过 Singular 的原生 validated transaction revenue
+  API 发送；同时使用 `ProductDetails` 的金额和币种作为商品补全兜底。
 - StoreKit 2 继续通过 receipt/JWS 字段上报。
 
 本包只向 Singular 转换并发送商店购买数据，不负责校验用户权益，也不会调用

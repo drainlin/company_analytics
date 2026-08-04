@@ -1110,7 +1110,7 @@ void main() {
       },
     );
 
-    test('routes StoreKit 1 purchases through native iapComplete', () async {
+    test('routes StoreKit 1 purchases with authoritative revenue', () async {
       final singular = _RecordingSingularSdkFacade();
       final provider = SingularAnalyticsProvider(
         apiKey: 'key',
@@ -1123,12 +1123,18 @@ void main() {
       await provider.trackInAppPurchase(
         _storeKit1PurchaseDetails(),
         _productDetails(),
+        attributes: const <String, dynamic>{'example_mode': 'ios_sandbox'},
       );
 
       expect(singular.calls, <String>['storeKit1InAppPurchase']);
       expect(singular.lastEventName, 'sng_ecommerce_purchase');
       expect(singular.lastTransactionId, 'purchase_123');
       expect(singular.lastProductId, 'coin_pack');
+      expect(singular.lastAmount, 4.99);
+      expect(singular.lastCurrency, 'USD');
+      expect(singular.lastArgs, <String, dynamic>{
+        'example_mode': 'ios_sandbox',
+      });
     });
 
     test('reports Google Play purchase validation data', () async {
@@ -1258,6 +1264,45 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('passes StoreKit 1 revenue fields through MethodChannel', () async {
+      const channel = MethodChannel('singular-api');
+      MethodCall? recordedCall;
+      final messenger =
+          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        recordedCall = call;
+        return <String, dynamic>{'status': 'queued_to_singular_native_sdk'};
+      });
+      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
+
+      await Singular.storeKit1InAppPurchase(
+        'sng_ecommerce_purchase',
+        transactionId: 'purchase_123',
+        productId: 'coin_pack',
+        amount: 4.99,
+        currency: 'USD',
+        attributes: <String, dynamic>{
+          'r': 999,
+          'pcc': 'BAD',
+          'example_mode': 'ios_sandbox',
+        },
+      );
+
+      expect(recordedCall?.method, 'storeKit1InAppPurchase');
+      expect(recordedCall?.arguments, <String, dynamic>{
+        'eventName': 'sng_ecommerce_purchase',
+        'transactionId': 'purchase_123',
+        'productId': 'coin_pack',
+        'amount': 4.99,
+        'currency': 'USD',
+        'attributes': <String, dynamic>{
+          'r': 999,
+          'pcc': 'BAD',
+          'example_mode': 'ios_sandbox',
+        },
+      });
     });
 
     test(
@@ -1742,11 +1787,17 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
     String eventName, {
     required String transactionId,
     required String productId,
+    required double amount,
+    required String currency,
+    required Map<String, dynamic> attributes,
   }) async {
     calls.add('storeKit1InAppPurchase');
     lastEventName = eventName;
     lastTransactionId = transactionId;
     lastProductId = productId;
+    lastAmount = amount;
+    lastCurrency = currency;
+    lastArgs = attributes;
   }
 
   @override

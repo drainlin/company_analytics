@@ -247,17 +247,22 @@ class Singular {
     });
   }
 
-  /// Reports a StoreKit 1 transaction through Singular's native
-  /// `iapComplete:withName:` API.
+  /// Reports a StoreKit 1 transaction through Singular's native validated
+  /// transaction revenue API, with explicit revenue fields as a fallback for
+  /// StoreKit product enrichment.
   static Future<void> storeKit1InAppPurchase(
     String eventName, {
     required String transactionId,
     required String productId,
+    required double amount,
+    required String currency,
+    Map<String, dynamic> attributes = const <String, dynamic>{},
   }) async {
     if (singularConfig?.enableLogging ?? false) {
       print(
         '[SingularFlutter][Dart] StoreKit1 IAP request '
-        'event=$eventName product=$productId transaction=$transactionId',
+        'event=$eventName product=$productId transaction=$transactionId '
+        'amount=$amount currency=$currency attributeKeys=${attributes.keys}',
       );
     }
     final result = await _channel.invokeMapMethod<String, dynamic>(
@@ -266,6 +271,9 @@ class Singular {
         'eventName': eventName,
         'transactionId': transactionId,
         'productId': productId,
+        'amount': amount,
+        'currency': currency,
+        'attributes': attributes,
       },
     );
     if (singularConfig?.enableLogging ?? false) {
