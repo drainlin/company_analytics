@@ -44,7 +44,9 @@ class CompanyAnalytics {
   RemoteAnalyticsConfigResult? _lastRemoteConfigResult;
   RemoteAnalyticsConfig? _lastRemoteConfig;
   RemoteAnalyticsConfigLoader? _lastRemoteConfigLoader;
+  bool _debugLoggingEnabled = false;
   bool _lastFacebookDebugLoggingEnabled = !kReleaseMode;
+  bool? _lastDebugLoggingEnabled;
   Future<void>? _remoteInitAttempt;
   Future<void>? _configInitAttempt;
   Future<void>? _pendingEventsLoadAttempt;
@@ -65,6 +67,7 @@ class CompanyAnalytics {
   Future<void> _initFromConfig(
     AnalyticsConfig config, {
     required bool facebookDebugLoggingEnabled,
+    required bool debugLoggingEnabled,
   }) {
     if (_isInitialized) {
       return Future<void>.value();
@@ -78,6 +81,7 @@ class CompanyAnalytics {
     final attempt = _performInitFromConfig(
       config,
       facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+      debugLoggingEnabled: debugLoggingEnabled,
     );
     _configInitAttempt = attempt;
     return attempt.whenComplete(() {
@@ -90,8 +94,15 @@ class CompanyAnalytics {
   Future<void> _performInitFromConfig(
     AnalyticsConfig config, {
     required bool facebookDebugLoggingEnabled,
+    required bool debugLoggingEnabled,
   }) async {
+    _debugLoggingEnabled = debugLoggingEnabled;
     await _ensurePendingEventsLoaded();
+    _debugLog(
+      'init config loaded: '
+      'facebook=${config.enableFacebook} singular=${config.enableSingular} '
+      'queueEventsBeforeInit=${config.queueEventsBeforeInit}',
+    );
     final errors = config.validate(
       hasCustomProviders: _customProviders?.isNotEmpty ?? false,
     );
@@ -108,9 +119,11 @@ class CompanyAnalytics {
           _buildDefaultProviders(
             config,
             facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+            debugLoggingEnabled: debugLoggingEnabled,
           );
 
       for (final provider in _providers) {
+        _debugLog('initialize provider: ${provider.name}');
         await provider.initialize();
       }
 
@@ -139,6 +152,7 @@ class CompanyAnalytics {
   Future<void> initFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig, {
     RemoteAnalyticsConfigLoader? loader,
+    bool? debugLoggingEnabled,
     bool? facebookDebugLoggingEnabled,
     @Deprecated(
       'Use facebookDebugLoggingEnabled. This alias will be removed in a future release.',
@@ -156,18 +170,23 @@ class CompanyAnalytics {
     }
 
     final configLoader = loader ?? RemoteAnalyticsConfigLoader();
-    final resolvedFacebookDebugLoggingEnabled =
-        _resolveFacebookDebugLoggingEnabled(
-          facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
-          facebookTestModeEnabled: facebookTestModeEnabled,
-        );
+    final resolvedLogging = _resolveLoggingSettings(
+      debugLoggingEnabled: debugLoggingEnabled,
+      facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+      facebookTestModeEnabled: facebookTestModeEnabled,
+    );
+    final effectiveDebugLoggingEnabled =
+        resolvedLogging.debugLoggingEnabled ?? !kReleaseMode;
     _lastRemoteConfig = remoteConfig;
     _lastRemoteConfigLoader = configLoader;
-    _lastFacebookDebugLoggingEnabled = resolvedFacebookDebugLoggingEnabled;
+    _lastFacebookDebugLoggingEnabled =
+        resolvedLogging.facebookDebugLoggingEnabled;
+    _lastDebugLoggingEnabled = resolvedLogging.debugLoggingEnabled;
     final attempt = _loadAndInitFromRemoteConfig(
       remoteConfig,
       configLoader,
-      facebookDebugLoggingEnabled: resolvedFacebookDebugLoggingEnabled,
+      facebookDebugLoggingEnabled: resolvedLogging.facebookDebugLoggingEnabled,
+      debugLoggingEnabled: effectiveDebugLoggingEnabled,
     );
     _remoteInitAttempt = attempt;
     try {
@@ -182,6 +201,7 @@ class CompanyAnalytics {
   Future<void> _loadAndInitFromRemoteConfig(
     RemoteAnalyticsConfig remoteConfig,
     RemoteAnalyticsConfigLoader configLoader, {
+    required bool debugLoggingEnabled,
     required bool facebookDebugLoggingEnabled,
   }) async {
     final result = await configLoader.loadResult(remoteConfig);
@@ -189,6 +209,7 @@ class CompanyAnalytics {
     await _initFromConfig(
       result.config,
       facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+      debugLoggingEnabled: debugLoggingEnabled,
     );
   }
 
@@ -407,11 +428,13 @@ class CompanyAnalytics {
   Future<void> track(AnalyticsEvent event) => _track(event);
 
   Future<void> _track(AnalyticsEvent event) async {
+    _debugLog('track requested: ${event.name}');
     event.validate();
     await _ensurePendingEventsLoaded();
     if (!_isInitialized) {
       await _retryRemoteInitIfPossible();
       if (_isInitialized) {
+        _debugLog('track retry init succeeded: ${event.name}');
         await _trackToProviders(event);
         return;
       }
@@ -429,11 +452,13 @@ class CompanyAnalytics {
         if (_pendingEvents.length >= maxPendingEvents) {
           _pendingEvents.removeFirst();
           _droppedPendingEventCount += 1;
+          _debugLog('dropped oldest queued event due to overflow.');
           debugPrint(
             '[company_analytics] Pending event outbox reached '
             '$maxPendingEvents events; dropped the oldest event.',
           );
         }
+        _debugLog('queue event before init: ${event.name}');
         _pendingEvents.add(event);
         await _persistPendingEvents();
         return;
@@ -444,6 +469,7 @@ class CompanyAnalytics {
 
     if (_pendingEvents.isNotEmpty) {
       try {
+        _debugLog('drain pending events before sending ${event.name}');
         await _drainPendingEvents();
       } catch (error) {
         debugPrint(
@@ -484,11 +510,19 @@ class CompanyAnalytics {
     }
 
     try {
-      await initFromRemoteConfig(
-        _lastRemoteConfig!,
-        loader: _lastRemoteConfigLoader,
-        facebookDebugLoggingEnabled: _lastFacebookDebugLoggingEnabled,
-      );
+      if (_lastDebugLoggingEnabled != null) {
+        await initFromRemoteConfig(
+          _lastRemoteConfig!,
+          loader: _lastRemoteConfigLoader,
+          debugLoggingEnabled: _lastDebugLoggingEnabled,
+        );
+      } else {
+        await initFromRemoteConfig(
+          _lastRemoteConfig!,
+          loader: _lastRemoteConfigLoader,
+          facebookDebugLoggingEnabled: _lastFacebookDebugLoggingEnabled,
+        );
+      }
     } catch (_) {
       // The caller falls back to queueing or fail-fast behavior.
     }
@@ -509,6 +543,7 @@ class CompanyAnalytics {
   }
 
   Future<void> _trackToProviders(AnalyticsEvent event) async {
+    _debugLog('dispatch event "${event.name}"');
     final providerErrors = <String, Object>{};
     for (final provider in _providers) {
       final sendToFacebook =
@@ -521,10 +556,14 @@ class CompanyAnalytics {
           event.sendToCustomProviders;
 
       if (sendToFacebook || sendToSingular || sendToAllOthers) {
+        _debugLog('send event "${event.name}" to provider "${provider.name}"');
         try {
           await provider.track(event);
         } catch (error) {
           providerErrors[provider.name] = error;
+          _debugLog(
+            'provider "${provider.name}" failed for ${event.name}: $error',
+          );
         }
       }
     }
@@ -553,6 +592,7 @@ class CompanyAnalytics {
     try {
       while (_pendingEvents.isNotEmpty) {
         final event = _pendingEvents.first;
+        _debugLog('drain pending event "${event.name}"');
         await _trackToProviders(event);
         _pendingEvents.removeFirst();
         changed = true;
@@ -590,11 +630,13 @@ class CompanyAnalytics {
     if (overflow > 0) {
       _droppedPendingEventCount += overflow;
       _pendingEvents.addAll(storedEvents.skip(overflow));
+      _debugLog('loaded pending events from cache: ${storedEvents.length}');
       debugPrint(
         '[company_analytics] Stored pending event outbox exceeded '
         '$maxPendingEvents events; dropped $overflow oldest events.',
       );
     } else {
+      _debugLog('loaded pending events from cache: ${storedEvents.length}');
       _pendingEvents.addAll(storedEvents);
     }
     _pendingEventsLoaded = true;
@@ -621,6 +663,7 @@ class CompanyAnalytics {
   static List<AnalyticsProvider> _buildDefaultProviders(
     AnalyticsConfig config, {
     required bool facebookDebugLoggingEnabled,
+    required bool debugLoggingEnabled,
   }) {
     final providers = <AnalyticsProvider>[];
 
@@ -641,7 +684,7 @@ class CompanyAnalytics {
         SingularAnalyticsProvider(
           apiKey: config.singularApiKey,
           secret: config.singularSecret,
-          enableLogging: config.singularEnableLogging,
+          enableLogging: config.singularEnableLogging || debugLoggingEnabled,
           waitForTrackingAuthSeconds: config.singularWaitForTrackingAuthSeconds,
         ),
       );
@@ -664,6 +707,42 @@ class CompanyAnalytics {
     return facebookDebugLoggingEnabled ??
         facebookTestModeEnabled ??
         !kReleaseMode;
+  }
+
+  static ({bool? debugLoggingEnabled, bool facebookDebugLoggingEnabled})
+  _resolveLoggingSettings({
+    bool? debugLoggingEnabled,
+    bool? facebookDebugLoggingEnabled,
+    bool? facebookTestModeEnabled,
+  }) {
+    if (debugLoggingEnabled != null) {
+      if (facebookDebugLoggingEnabled != null ||
+          facebookTestModeEnabled != null) {
+        throw ArgumentError(
+          'Pass only debugLoggingEnabled. '
+          'facebookDebugLoggingEnabled and facebookTestModeEnabled are ignored when '
+          'debugLoggingEnabled is set.',
+        );
+      }
+      return (
+        debugLoggingEnabled: debugLoggingEnabled,
+        facebookDebugLoggingEnabled: debugLoggingEnabled,
+      );
+    }
+
+    return (
+      debugLoggingEnabled: null,
+      facebookDebugLoggingEnabled: _resolveFacebookDebugLoggingEnabled(
+        facebookDebugLoggingEnabled: facebookDebugLoggingEnabled,
+        facebookTestModeEnabled: facebookTestModeEnabled,
+      ),
+    );
+  }
+
+  void _debugLog(String message) {
+    if (_debugLoggingEnabled) {
+      debugPrint('[company_analytics][Tracking] $message');
+    }
   }
 }
 

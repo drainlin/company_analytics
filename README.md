@@ -239,7 +239,22 @@ Future<void> initAnalytics() async {
 推荐在 `runApp()` 后调用一次 `initAnalytics()`。SDK 只在初始化时请求远程配置，
 不会后台轮询。
 
-Facebook 诊断日志默认在 Debug/Profile 开启、Release 关闭，也可以显式覆盖：
+Facebook 与 Singular 及本包打点过程日志可统一通过 `debugLoggingEnabled` 开启：
+
+```dart
+await analytics.initFromRemoteConfig(
+  remoteConfig,
+  debugLoggingEnabled: true,
+);
+```
+
+开启后会同时输出：
+
+- Facebook `debugLoggingEnabled`（包含 diagnostics、配置检查和手动打点日志）
+- Singular `enableLogging`（SDK `logLevel` 打开）
+- 公司包内的打点路由/排队日志（`[company_analytics][Tracking]`）
+
+或者只覆盖 Facebook 日志：
 
 ```dart
 await analytics.initFromRemoteConfig(
@@ -248,9 +263,15 @@ await analytics.initFromRemoteConfig(
 );
 ```
 
-开启后会输出配置快照和 Meta 诊断日志，并发送
+`facebookDebugLoggingEnabled` 仅控制 Facebook，若你只想单独调整 Facebook，
+仍可使用 `facebookDebugLoggingEnabled`。`debugLoggingEnabled` 是新的全量开关，
+设置后会同时强制开启/关闭 Facebook 与 Singular 的日志。开启后可看到
 `company_analytics_diagnostic` 对照事件。原生日志可能包含 Token 或广告标识符，
 不要在 Release 开启。
+
+原有说明中，“Facebook/Singular/company 打点日志默认在 Debug/Profile 开启、Release 关闭”仍成立。`debugLoggingEnabled`
+不显式传值时，默认使用 `!kReleaseMode` 的统一开关；`Facebook` 兼容参数仍按
+`facebookDebugLoggingEnabled`（未设置时是 `!kReleaseMode`）。
 
 ### Facebook 自动事件测试
 

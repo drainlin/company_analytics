@@ -65,6 +65,10 @@ class FacebookAnalyticsProvider implements AnalyticsProvider {
 
   @override
   Future<void> track(AnalyticsEvent event) async {
+    if (debugLoggingEnabled) {
+      debugPrint('[CompanyAnalytics][Facebook] track received: ${event.name}');
+    }
+
     event.validate();
     if (_FacebookEventMapping.purchaseEvents.contains(event.name) &&
         !event.hasRevenue) {

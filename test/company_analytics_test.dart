@@ -509,6 +509,46 @@ void main() {
     );
 
     test(
+      'track retries failed remote init when unified logging flag is set',
+      () async {
+        final provider = InMemoryAnalyticsProvider();
+        final httpClient = _SequenceConfigHttpClient(<Object>[
+          Exception('network down'),
+          _remoteJson,
+        ]);
+        final loader = RemoteAnalyticsConfigLoader(
+          httpClient: httpClient,
+          cache: _MemoryConfigCache(),
+          platform: TargetPlatform.iOS,
+        );
+        final analytics = CompanyAnalytics(
+          providers: <InMemoryAnalyticsProvider>[provider],
+        );
+        final remoteConfig = RemoteAnalyticsConfig(
+          url: Uri.parse('http://127.0.0.1/config.json'),
+          maxAttempts: 1,
+        );
+
+        await expectLater(
+          analytics.initFromRemoteConfig(
+            remoteConfig,
+            loader: loader,
+            debugLoggingEnabled: true,
+          ),
+          throwsA(isA<AnalyticsInitializationException>()),
+        );
+
+        await analytics.track(const AnalyticsEvent(name: 'app_open'));
+
+        expect(analytics.isInitialized, isTrue);
+        expect(httpClient.callCount, 2);
+        expect(provider.trackedEvents.map((event) => event.name), <String>[
+          'app_open',
+        ]);
+      },
+    );
+
+    test(
       'track waits for in-flight remote init without duplicate fetch',
       () async {
         final provider = InMemoryAnalyticsProvider();

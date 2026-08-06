@@ -45,6 +45,15 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
 
   @override
   Future<void> track(AnalyticsEvent event) async {
+    if (enableLogging) {
+      _log(
+        'track received: name=${event.name} '
+        'valueToSum=${event.valueToSum} '
+        'hasRevenue=${event.hasRevenue} '
+        'sendToCustomProviders=${event.sendToCustomProviders}',
+      );
+    }
+
     if (event.hasRevenue) {
       if (event.parameters.isEmpty) {
         await _singular.customRevenue(

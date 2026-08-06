@@ -127,14 +127,23 @@ Future<void> initAnalytics() async {
       timeout: const Duration(seconds: 15),
       useCachedConfigOnFailure: true,
     ),
-    facebookTestModeEnabled: kDebugMode,
+    debugLoggingEnabled: kDebugMode,
   );
 }
 ```
 
-`facebookTestModeEnabled` 是旧的兼容参数，新代码使用
-`facebookDebugLoggingEnabled`。未显式传值时使用 `!kReleaseMode`：
-Debug/Profile 开启，Release 关闭。
+`debugLoggingEnabled` 是推荐参数，会统一开启：
+
+- Facebook 的 `debugLoggingEnabled`
+- Singular 的 `enableLogging`
+- 本包内的 tracking 调试日志（事件分发、排队、provider 调用）
+
+如需只控制 Facebook 日志，可使用 `facebookDebugLoggingEnabled`。它与
+`facebookTestModeEnabled` 是同一兼容层，未显式传值时仍采用 `!kReleaseMode`
+（Debug/Profile 开启，Release 关闭）。
+
+`debugLoggingEnabled` 未显式传值时，默认也按 `!kReleaseMode`
+作为统一开关，Debug/Profile 默认会同时开启 Singular 与 tracking 日志。
 
 初始化顺序：
 
