@@ -1,3 +1,9 @@
+## 0.3.1
+
+* Keep Google Play Billing and Singular SDK class names for R8 release builds.
+  The Facebook SDK resolves Billing classes reflectively by name, and R8 was
+  renaming them, silently disabling automatic IAP purchase logging.
+
 ## 0.3.0
 
 * Preserve StoreKit 1 revenue amount and currency by passing authoritative
