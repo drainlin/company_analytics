@@ -50,7 +50,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.3.0
+      ref: v0.3.1
 
   in_app_purchase: 3.2.4
 ```
@@ -62,7 +62,7 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.3.0
+      ref: v0.3.1
 
   in_app_purchase: 3.2.4
 ```
