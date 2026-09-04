@@ -305,11 +305,12 @@ class CompanyAnalytics {
     );
   }
 
-  /// Reports a newly completed non-subscription store purchase to Singular.
+  /// Reports a newly completed non-subscription store purchase to Singular as
+  /// custom revenue.
   ///
   /// The purchase must have [PurchaseStatus.purchased] and match [product].
   /// This method does not complete or acknowledge the store transaction.
-  /// Unlike serializable events, purchase receipts are never persisted in the
+  /// Purchase receipts are not sent to Singular or persisted in the
   /// SharedPreferences outbox, so analytics must already be initialized.
   Future<void> trackSingularInAppPurchase({
     required PurchaseDetails purchase,

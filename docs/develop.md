@@ -248,8 +248,9 @@ await analytics.trackSingularInAppPurchase(
 );
 ```
 
-这个方法使用 `sng_ecommerce_purchase`，根据平台从购买对象中提取 StoreKit
-receipt 或 Google Play `originalJson/signature`。只接受
+这个方法使用 `sng_ecommerce_purchase`，通过 Singular `customRevenue()`（带扩展
+参数时为 `customRevenueWithAttributes()`）上报 `ProductDetails` 中的金额和币种。
+它不会上传 StoreKit receipt/JWS 或 Google Play `originalJson/signature`。只接受
 `PurchaseStatus.purchased`；不会完成或确认商店交易。
 
 特殊自定义事件必须显式选择目标：
@@ -281,8 +282,7 @@ provider 成功后才出队；单个 provider 失败时其他 provider 仍会继
 收入事件应使用稳定交易 ID 去重。默认上限为 200 条，超限丢弃最旧事件并记录在
 `droppedPendingEventCount`；补发出队采用单次批量持久化，避免逐条全量重写。
 
-非订阅 IAP 的 receipt/signature 不进入 SharedPreferences outbox，调用前必须
-初始化成功。
+非订阅 IAP 不进入 SharedPreferences outbox，调用前必须初始化成功。
 
 严格模式：
 

@@ -331,9 +331,8 @@ class _SingularPurchasePageState extends State<SingularPurchasePage> {
         },
       };
       if (purchase.productID == purchaseProductId) {
-        final purchaseForSingular = await _preparePurchaseForSingular(purchase);
         await _analytics.trackSingularInAppPurchase(
-          purchase: purchaseForSingular,
+          purchase: purchase,
           product: product,
           attributes: eventAttributes,
         );
@@ -363,58 +362,6 @@ class _SingularPurchasePageState extends State<SingularPurchasePage> {
     } finally {
       _reportingTransactions.remove(transactionKey);
     }
-  }
-
-  Future<PurchaseDetails> _preparePurchaseForSingular(
-    PurchaseDetails purchase,
-  ) async {
-    var receipt = purchase.verificationData.serverVerificationData;
-    _addLog(
-      '${_activeStoreKitVersion?.label ?? 'StoreKit'} '
-      'transaction=${purchase.purchaseID ?? 'null'} '
-      'receiptLength=${receipt.length}',
-    );
-
-    if (_activeStoreKitVersion != StoreKitVersion.storeKit1) {
-      if (receipt.isEmpty) {
-        throw StateError('StoreKit 2 transaction JWS 为空，无法上报 Singular。');
-      }
-      return purchase;
-    }
-
-    if (purchase is! AppStorePurchaseDetails) {
-      throw StateError('选择了 StoreKit 1，但收到的类型是 ${purchase.runtimeType}。');
-    }
-
-    if (receipt.isEmpty) {
-      _addLog('StoreKit 1 App Receipt 为空，开始执行 SKReceiptRefreshRequest…');
-      await SKRequestMaker().startRefreshReceiptRequest();
-      receipt = await SKReceiptManager.retrieveReceiptData();
-      _addLog('StoreKit 1 Receipt 刷新完成，receiptLength=${receipt.length}');
-    }
-
-    if (receipt.isEmpty) {
-      throw StateError('StoreKit 1 App Receipt 刷新后仍为空，暂不结束交易。');
-    }
-    if (purchase.purchaseID?.trim().isEmpty ?? true) {
-      throw StateError('StoreKit 1 transaction ID 为空，暂不结束交易。');
-    }
-    if (receipt == purchase.verificationData.serverVerificationData) {
-      return purchase;
-    }
-
-    return AppStorePurchaseDetails(
-      purchaseID: purchase.purchaseID,
-      productID: purchase.productID,
-      verificationData: PurchaseVerificationData(
-        localVerificationData: receipt,
-        serverVerificationData: receipt,
-        source: purchase.verificationData.source,
-      ),
-      transactionDate: purchase.transactionDate,
-      skPaymentTransaction: purchase.skPaymentTransaction,
-      status: purchase.status,
-    );
   }
 
   Future<void> _retryPendingReports() async {

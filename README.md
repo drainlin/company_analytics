@@ -50,7 +50,7 @@ dependencies:
   company_analytics:
     git:
       url: http://git.qisoft.cn/dengyulin/company_analytics.git
-      ref: v0.3.1
+      ref: v0.3.2
 
   in_app_purchase: 3.2.4
 ```
@@ -62,7 +62,7 @@ dependencies:
   company_analytics:
     git:
       url: https://github.com/drainlin/company_analytics.git
-      ref: v0.3.1
+      ref: v0.3.2
 
   in_app_purchase: 3.2.4
 ```
@@ -370,10 +370,10 @@ await analytics.trackSingularInAppPurchase(
 - `productDetails.currencyCode` 是三位大写币种。
 - restored、pending、canceled 和 error 状态都不能上报。
 - 调用前必须完成 analytics 初始化。
-- StoreKit 1 会在完成交易前通过 transaction ID 找到原生
-  `SKPaymentTransaction`，通过 Singular 的原生 validated transaction revenue
-  API 发送；同时使用 `ProductDetails` 的金额和币种作为商品补全兜底。
-- StoreKit 2 继续通过 receipt/JWS 字段上报。
+- 所有平台统一调用 Singular `customRevenue()`；传入 `attributes` 时调用
+  `customRevenueWithAttributes()`。
+- 使用 `ProductDetails` 的金额和币种，不向 Singular 上传 receipt、JWS、签名或
+  transaction ID。
 
 本包只向 Singular 转换并发送商店购买数据，不负责校验用户权益，也不会调用
 `InAppPurchase.completePurchase()`。典型接法如下：

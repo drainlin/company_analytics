@@ -1,9 +1,6 @@
 import 'package:in_app_purchase/in_app_purchase.dart';
-import 'package:in_app_purchase_android/in_app_purchase_android.dart';
-import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:singular_flutter_sdk/events.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
-import 'package:singular_flutter_sdk/singular_iap.dart';
 
 import '../analytics_event.dart';
 import '../analytics_provider.dart';
@@ -72,7 +69,7 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
     await _singular.eventWithArgs(event.name, event.parameters);
   }
 
-  /// Reports a new non-subscription store purchase with validation data.
+  /// Reports a new non-subscription store purchase as custom revenue.
   Future<void> trackInAppPurchase(
     PurchaseDetails purchase,
     ProductDetails product, {
@@ -101,47 +98,21 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
     }
 
     _log(
-      'IAP received type=${purchase.runtimeType} product=${purchase.productID} '
-      'transaction=${purchase.purchaseID ?? 'null'} '
-      'receiptLength=${purchase.verificationData.serverVerificationData.length} '
+      'reporting IAP as custom revenue product=${purchase.productID} '
       'amount=${product.rawPrice} currency=${product.currencyCode}',
     );
-
-    if (purchase is AppStorePurchaseDetails) {
-      final transactionId = purchase.purchaseID?.trim();
-      if (transactionId == null || transactionId.isEmpty) {
-        throw const AnalyticsEventValidationException(
-          'StoreKit 1 purchases require a transaction id.',
-        );
-      }
-      _log(
-        'routing StoreKit 1 purchase through native '
-        'Singular validated transaction revenue path',
-      );
-      await _singular.storeKit1InAppPurchase(
-        Events.sngEcommercePurchase,
-        transactionId: transactionId,
-        productId: purchase.productID,
-        amount: product.rawPrice,
-        currency: product.currencyCode,
-        attributes: attributes,
-      );
-      _log('native StoreKit 1 IAP call completed');
-      return;
-    }
-
-    final singularPurchase = _buildSingularPurchase(purchase, product);
-    _log('routing purchase through Singular receipt/JWS event path');
     if (attributes.isEmpty) {
-      await _singular.inAppPurchase(
+      await _singular.customRevenue(
         Events.sngEcommercePurchase,
-        singularPurchase,
+        product.currencyCode,
+        product.rawPrice,
       );
       return;
     }
-    await _singular.inAppPurchaseWithAttributes(
+    await _singular.customRevenueWithAttributes(
       Events.sngEcommercePurchase,
-      singularPurchase,
+      product.currencyCode,
+      product.rawPrice,
       attributes,
     );
   }
@@ -151,39 +122,6 @@ class SingularAnalyticsProvider implements AnalyticsProvider {
       // Never log the API secret or receipt body.
       // ignore: avoid_print
       print('[company_analytics][Singular] $message');
-    }
-  }
-
-  static SingularIAP _buildSingularPurchase(
-    PurchaseDetails purchase,
-    ProductDetails product,
-  ) {
-    switch (purchase.verificationData.source) {
-      case 'google_play':
-        if (purchase is! GooglePlayPurchaseDetails) {
-          throw const AnalyticsEventValidationException(
-            'Google Play purchases must be GooglePlayPurchaseDetails.',
-          );
-        }
-        return SingularAndroidIAP(
-          product.rawPrice,
-          product.currencyCode,
-          purchase.billingClientPurchase.signature,
-          purchase.billingClientPurchase.originalJson,
-        );
-      case 'app_store':
-        return SingularIOSIAP(
-          product.rawPrice,
-          product.currencyCode,
-          purchase.productID,
-          purchase.purchaseID,
-          purchase.verificationData.serverVerificationData,
-        );
-      default:
-        throw AnalyticsEventValidationException(
-          'Unsupported in-app purchase source: '
-          '${purchase.verificationData.source}.',
-        );
     }
   }
 

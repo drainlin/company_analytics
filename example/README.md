@@ -19,7 +19,7 @@
    中拥有上述三个产品的 App 一致。
 3. 确认 Paid Applications 协议有效、产品已可用于 Sandbox 测试。
 4. 建议使用真机和 Sandbox Apple Account。Xcode 本地 StoreKit Configuration
-   可以测试 UI，但本地 receipt 不适合拿来判断 Singular 服务端收入验证是否成功。
+   也可以用于验证购买 UI 和 custom revenue 上报流程。
 
 运行：
 
@@ -41,12 +41,10 @@ flutter run
 
 - `test.1000` 新购成功：把 `PurchaseDetails` 和 `ProductDetails` 交给
   `trackSingularInAppPurchase()`，成功后才结束 StoreKit 交易。
-- StoreKit 1 会先检查 App Receipt；为空时执行 `SKReceiptRefreshRequest`，刷新后仍为空
-  则保留未完成交易，不向 Singular 提交无效收入。日志只输出 receipt 长度，不输出内容。
-- StoreKit 1 随后通过原生 `SKPaymentQueue` 匹配 transaction ID，并调用 Singular
-  `iapComplete:withName:`。远程配置开启 `singular.enable_logging` 后，可搜索
-  `[company_analytics][Singular]`、`[SingularFlutter][Dart]`、
-  `[SingularFlutter][iOS]` 和 Singular SDK 自身的 Verbose 日志。
+- StoreKit 1 和 StoreKit 2 都使用 `ProductDetails` 的金额和币种调用 Singular
+  `customRevenueWithAttributes()`，不会向 Singular 上传 receipt/JWS。
+- 远程配置开启 `singular.enable_logging` 后，可搜索
+  `[company_analytics][Singular]` 和 Singular SDK 自身的 Verbose 日志。
 - 两个订阅新购成功：使用商店返回的实际价格、币种和 transaction ID 调用
   `trackSingularSubscription()`。
 - restored 交易只恢复权益，不发送 Singular 新收入事件。

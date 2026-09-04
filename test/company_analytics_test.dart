@@ -15,7 +15,6 @@ import 'package:in_app_purchase_storekit/in_app_purchase_storekit.dart';
 import 'package:in_app_purchase_storekit/store_kit_wrappers.dart';
 import 'package:singular_flutter_sdk/singular.dart';
 import 'package:singular_flutter_sdk/singular_config.dart';
-import 'package:singular_flutter_sdk/singular_iap.dart';
 import 'package:shared_preferences_platform_interface/in_memory_shared_preferences_async.dart';
 import 'package:shared_preferences_platform_interface/shared_preferences_async_platform_interface.dart';
 
@@ -361,9 +360,11 @@ void main() {
         'start',
         'customRevenueWithAttributes',
         'eventWithArgs',
-        'inAppPurchase',
+        'customRevenue',
       ]);
       expect(singular.lastEventName, 'sng_ecommerce_purchase');
+      expect(singular.lastCurrency, 'USD');
+      expect(singular.lastAmount, 4.99);
     });
 
     test('fixed Facebook trial event only sends StartTrial to Meta', () async {
@@ -1079,7 +1080,7 @@ void main() {
     });
 
     test(
-      'reports StoreKit purchases with the Singular standard event',
+      'reports StoreKit purchases as custom revenue with attributes',
       () async {
         final singular = _RecordingSingularSdkFacade();
         final provider = SingularAnalyticsProvider(
@@ -1096,21 +1097,15 @@ void main() {
           attributes: const <String, dynamic>{'is_first_purchase': true},
         );
 
-        expect(singular.calls, <String>['inAppPurchaseWithAttributes']);
+        expect(singular.calls, <String>['customRevenueWithAttributes']);
         expect(singular.lastEventName, 'sng_ecommerce_purchase');
-        expect(singular.lastPurchase?.toMap, <String, dynamic>{
-          'pcc': 'USD',
-          'r': 4.99,
-          'is_revenue_event': true,
-          'ptr': 'app_store_receipt',
-          'pti': 'purchase_123',
-          'pk': 'coin_pack',
-        });
+        expect(singular.lastCurrency, 'USD');
+        expect(singular.lastAmount, 4.99);
         expect(singular.lastArgs, <String, dynamic>{'is_first_purchase': true});
       },
     );
 
-    test('routes StoreKit 1 purchases with authoritative revenue', () async {
+    test('reports StoreKit 1 purchases as custom revenue', () async {
       final singular = _RecordingSingularSdkFacade();
       final provider = SingularAnalyticsProvider(
         apiKey: 'key',
@@ -1126,10 +1121,8 @@ void main() {
         attributes: const <String, dynamic>{'example_mode': 'ios_sandbox'},
       );
 
-      expect(singular.calls, <String>['storeKit1InAppPurchase']);
+      expect(singular.calls, <String>['customRevenueWithAttributes']);
       expect(singular.lastEventName, 'sng_ecommerce_purchase');
-      expect(singular.lastTransactionId, 'purchase_123');
-      expect(singular.lastProductId, 'coin_pack');
       expect(singular.lastAmount, 4.99);
       expect(singular.lastCurrency, 'USD');
       expect(singular.lastArgs, <String, dynamic>{
@@ -1137,7 +1130,7 @@ void main() {
       });
     });
 
-    test('reports Google Play purchase validation data', () async {
+    test('reports Google Play purchases as custom revenue', () async {
       final singular = _RecordingSingularSdkFacade();
       final provider = SingularAnalyticsProvider(
         apiKey: 'key',
@@ -1152,16 +1145,10 @@ void main() {
         _productDetails(),
       );
 
-      expect(singular.calls, <String>['inAppPurchase']);
+      expect(singular.calls, <String>['customRevenue']);
       expect(singular.lastEventName, 'sng_ecommerce_purchase');
-      expect(singular.lastPurchase?.toMap, <String, dynamic>{
-        'pcc': 'USD',
-        'r': 4.99,
-        'is_revenue_event': true,
-        'ptr': '{"productId":"coin_pack"}',
-        'receipt': '{"productId":"coin_pack"}',
-        'receipt_signature': 'purchase_signature',
-      });
+      expect(singular.lastCurrency, 'USD');
+      expect(singular.lastAmount, 4.99);
     });
 
     test('rejects restored StoreKit purchases', () async {
@@ -1235,108 +1222,6 @@ void main() {
         ),
       );
     });
-
-    test('awaits Singular IAP MethodChannel errors', () async {
-      const channel = MethodChannel('singular-api');
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        throw PlatformException(code: 'iap_delivery_failed');
-      });
-      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-
-      await expectLater(
-        Singular.inAppPurchase(
-          'sng_ecommerce_purchase',
-          SingularIOSIAP(
-            4.99,
-            'USD',
-            'coin_pack',
-            'purchase_123',
-            'app_store_receipt',
-          ),
-        ),
-        throwsA(
-          isA<PlatformException>().having(
-            (error) => error.code,
-            'code',
-            'iap_delivery_failed',
-          ),
-        ),
-      );
-    });
-
-    test('passes StoreKit 1 revenue fields through MethodChannel', () async {
-      const channel = MethodChannel('singular-api');
-      MethodCall? recordedCall;
-      final messenger =
-          TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-      messenger.setMockMethodCallHandler(channel, (call) async {
-        recordedCall = call;
-        return <String, dynamic>{'status': 'queued_to_singular_native_sdk'};
-      });
-      addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-
-      await Singular.storeKit1InAppPurchase(
-        'sng_ecommerce_purchase',
-        transactionId: 'purchase_123',
-        productId: 'coin_pack',
-        amount: 4.99,
-        currency: 'USD',
-        attributes: <String, dynamic>{
-          'r': 999,
-          'pcc': 'BAD',
-          'example_mode': 'ios_sandbox',
-        },
-      );
-
-      expect(recordedCall?.method, 'storeKit1InAppPurchase');
-      expect(recordedCall?.arguments, <String, dynamic>{
-        'eventName': 'sng_ecommerce_purchase',
-        'transactionId': 'purchase_123',
-        'productId': 'coin_pack',
-        'amount': 4.99,
-        'currency': 'USD',
-        'attributes': <String, dynamic>{
-          'r': 999,
-          'pcc': 'BAD',
-          'example_mode': 'ios_sandbox',
-        },
-      });
-    });
-
-    test(
-      'keeps verified IAP fields authoritative over custom attributes',
-      () async {
-        const channel = MethodChannel('singular-api');
-        MethodCall? recordedCall;
-        final messenger =
-            TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
-        messenger.setMockMethodCallHandler(channel, (call) async {
-          recordedCall = call;
-          return null;
-        });
-        addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-
-        await Singular.inAppPurchaseWithAttributes(
-          'sng_ecommerce_purchase',
-          SingularIOSIAP(
-            4.99,
-            'USD',
-            'coin_pack',
-            'purchase_123',
-            'app_store_receipt',
-          ),
-          <String, dynamic>{'r': 999, 'pcc': 'BAD', 'campaign': 'summer'},
-        );
-
-        final arguments = recordedCall?.arguments as Map<Object?, Object?>;
-        final attributes = arguments['args'] as Map<Object?, Object?>;
-        expect(attributes['r'], 4.99);
-        expect(attributes['pcc'], 'USD');
-        expect(attributes['campaign'], 'summer');
-      },
-    );
   });
 }
 
@@ -1715,9 +1600,6 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
   String? lastCurrency;
   double? lastAmount;
   Map? lastArgs;
-  SingularIAP? lastPurchase;
-  String? lastTransactionId;
-  String? lastProductId;
 
   @override
   Future<void> start(SingularConfig config) async {
@@ -1760,43 +1642,6 @@ class _RecordingSingularSdkFacade implements SingularSdkFacade {
     lastEventName = eventName;
     lastCurrency = currency;
     lastAmount = amount;
-    lastArgs = attributes;
-  }
-
-  @override
-  Future<void> inAppPurchase(String eventName, SingularIAP purchase) async {
-    calls.add('inAppPurchase');
-    lastEventName = eventName;
-    lastPurchase = purchase;
-  }
-
-  @override
-  Future<void> inAppPurchaseWithAttributes(
-    String eventName,
-    SingularIAP purchase,
-    Map attributes,
-  ) async {
-    calls.add('inAppPurchaseWithAttributes');
-    lastEventName = eventName;
-    lastPurchase = purchase;
-    lastArgs = attributes;
-  }
-
-  @override
-  Future<void> storeKit1InAppPurchase(
-    String eventName, {
-    required String transactionId,
-    required String productId,
-    required double amount,
-    required String currency,
-    required Map<String, dynamic> attributes,
-  }) async {
-    calls.add('storeKit1InAppPurchase');
-    lastEventName = eventName;
-    lastTransactionId = transactionId;
-    lastProductId = productId;
-    lastAmount = amount;
-    lastCurrency = currency;
     lastArgs = attributes;
   }
 

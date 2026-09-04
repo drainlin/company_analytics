@@ -1,3 +1,8 @@
+## 0.3.2
+
+* Report non-subscription purchases through Singular `customRevenue` APIs and
+  stop sending purchase receipts or using Singular IAP-specific APIs.
+
 ## 0.3.1
 
 * Keep Google Play Billing and Singular SDK class names for R8 release builds.
